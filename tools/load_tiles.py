@@ -66,15 +66,22 @@ def transport(brand, mm):
     return 12 if mm <= 9 else 15 if mm <= 13 else 20
 
 
-def margin(size, net):
-    # basic plain glossy / matt / carving 600x1200 tiles: cost below Rs 40/sq ft sell at x1.5 (Kirti, 2026-10-21)
-    return 1.5 if size == "60x120 cm" and net < 40 else 2
+# Only basic plain glossy / matt / carving 600x1200 tiles costing below Rs 40/sq ft sell at x1.5.
+# Punch, highlighter, decor and every other special series keep x2 (Kirti, 2026-10-21).
+BASIC_FINISHES = {"glossy", "matt", "rustic matt", "normal matt", "polished", "glossy / matt", "carving",
+                  "rustic carving", "sand carving", "glossy carving", "carving matt", "pro matt", "pro matt carving"}
+SPECIAL_SERIES = re.compile(r"punch|highlight|d[eé]cor|bi mor|cementa|drift|sicilia", re.I)
 
 
-def selling_price(net, unit, brand, mm, size=None):
+def margin(size, net, finish=None, series=None):
+    basic = (finish or "").strip().lower() in BASIC_FINISHES and not SPECIAL_SERIES.search(series or "")
+    return 1.5 if size == "60x120 cm" and net < 40 and basic else 2
+
+
+def selling_price(net, unit, brand, mm, size=None, finish=None, series=None):
     if net is None or unit != "sq ft":
         return None
-    return round((net + transport(brand, mm)) * 1.18 * margin(size, net))   # whole rupees (Kirti, 2026-10-21)
+    return round((net + transport(brand, mm)) * 1.18 * margin(size, net, finish, series))   # whole rupees (Kirti, 2026-10-21)
 
 
 class Specs:
@@ -179,7 +186,8 @@ def main(tiles_path, work):
                 seen.add(sig)
                 offers.append({"tile_id": ids[key(d["brand"], d["name"])], "size": o.get("size"), "finish": o.get("finish"),
                                "series": o.get("line"), "unit": unit, "packing": o.get("box"), "box_sqft": o.get("boxSqft"),
-                               "thickness_mm": mm, "weight_kg": kg, "selling_price": selling_price(price, unit, d["brand"], mm or 9, o.get("size")),
+                               "thickness_mm": mm, "weight_kg": kg, "selling_price": selling_price(price, unit, d["brand"], mm or 9, o.get("size"),
+                                                                                                 o.get("finish"), o.get("line")),
                                "note": " ".join(filter(None, [note, o.get("extra")])) or None})
                 costs.append(price)
         made = call("rows", offers, table="offers")["rows"]
