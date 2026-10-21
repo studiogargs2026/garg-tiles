@@ -25,6 +25,13 @@ def norm(text):
     return re.sub(r"\b0+(\d)", r"\1", text).strip()      # "decor 04" and "decor 4" read the same
 
 
+def distance(a, b):
+    """Gap between two page rectangles (0 when they touch or overlap)."""
+    dx = max(0, b[0] - a[2], a[0] - b[2])
+    dy = max(0, b[1] - a[3], a[1] - b[3])
+    return (dx * dx + dy * dy) ** 0.5
+
+
 def picture_near(block, images):
     """The picture whose column overlaps the text block and sits closest above it (else below)."""
     bx0, by0, bx1, by1 = block
@@ -63,17 +70,22 @@ def main(tiles_path, work):
     found = 0
     for d in decors:
         want = " " + norm(d["name"]) + " "
-        hit = None
+        # every picture printed near the decor's name on any page; the biggest close one wins,
+        # so a large face on the decor's own page beats a small swatch on an index page
+        best = None
         for folder, page, blocks in pages:
             for rect, text in blocks:
-                if want in text:
-                    hit = picture_near(rect, images.get((folder, page), []))
-                    if hit:
-                        break
-            if hit:
-                break
-        if not hit:
+                if want not in text:
+                    continue
+                for img in images.get((folder, page), []):
+                    if img["w"] * img["h"] < 150 * 150:
+                        continue
+                    score = img["w"] * img["h"] / (1 + distance(rect, img["bbox"]) / 40) ** 2
+                    if best is None or score > best[0]:
+                        best = (score, img)
+        if not best:
             continue
+        hit = best[1]
         img = read(os.path.join(work, "pics", hit["path"]))
         if img is None:
             continue

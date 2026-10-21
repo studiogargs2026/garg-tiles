@@ -64,11 +64,13 @@
     <section id="selections-view" hidden>
       <h1>Client selections</h1>
       <button id="sel-new" type="button" class="primary">+ New selection</button>
+      <button id="sel-unsaved" type="button" class="ghost" hidden>Continue unfinished selection</button>
       <ul id="sel-list" class="plain sel-list"></ul>
     </section>
 
     <section id="selection-view" hidden>
       <h1>Client selection</h1>
+      <p id="sel-draft" class="muted draft-note"></p>
       <div class="card pad">
         <label>Client name <input id="sel-client" placeholder="e.g. Rocky Singh Ji" autocomplete="off"></label>
         <label>Address (for quotation) <input id="sel-address" autocomplete="off"></label>
@@ -91,6 +93,15 @@
           <label>Quote number<input id="sel-quote-no" placeholder="made automatically"></label>
           <label>Labour charges ₹<input id="sel-labour" type="number" inputmode="decimal"></label>
         </div>
+        <label>GST in the quotation
+          <select id="sel-gst">
+            <option value="in">Rates already include GST</option>
+            <option value="split">Show GST separately (same total)</option>
+            <option value="add">Add GST on top of the rates</option>
+          </select>
+        </label>
+        <label id="sel-gst-rate-wrap">GST %<input id="sel-gst-rate" type="number" inputmode="decimal" value="18"></label>
+        <label>Notes (printed in both PDFs)<textarea id="sel-notes" rows="3" placeholder="e.g. Skirting in the same tile. Delivery after 10 days."></textarea></label>
         <p id="sel-total" class="price"></p>
       </div>
 

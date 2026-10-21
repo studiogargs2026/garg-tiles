@@ -75,6 +75,7 @@ async function startSession(session) {
   current = null;
   show('search-view');      // never wait on the network before showing the app
   loadFilters();
+  window.resumeDraft?.();   // an unfinished client selection opens again
   const { data } = await db.rpc('is_admin');
   isAdmin = data === true;
   $('admin').hidden = !isAdmin;
