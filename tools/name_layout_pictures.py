@@ -105,7 +105,7 @@ def main(old_dir, tiles_path, work):
             continue
         for k in keys:
             d = designs[k]
-            best = None
+            cands = []
             for folder, page, (tx0, tx1) in spots:
                 for img in images[(folder, page)]:
                     w, h = img["w"], img["h"]
@@ -115,20 +115,19 @@ def main(old_dir, tiles_path, work):
                     if not any(abs(r / want - 1) < 0.08 for want in ratios(d)):
                         continue
                     x0, _, x1, _ = img["bbox"]
-                    near = min(tx1, x1) - max(tx0, x0) > 0
-                    score = (near, w * h)
-                    if best is None or score > best[0]:
-                        best = (score, img)
-            if not best:
-                continue
-            img = best[1]
-            pic = read(os.path.join(work, "pics", img["path"]))
-            if pic is None:
-                continue
-            if k in old:
-                small = read(old[k])
-                if small is not None and float(np.linalg.norm(mean_lab(small) - mean_lab(pic))) > MAX_COLOUR:
+                    cands.append(((min(tx1, x1) - max(tx0, x0) > 0, w * h), img))
+            # best first: under the name, then biggest; the first one close in colour wins
+            small = read(old[k]) if k in old else None
+            img = pic = None
+            for _, c in sorted(cands, key=lambda c: c[0], reverse=True)[:6]:
+                p = read(os.path.join(work, "pics", c["path"]))
+                if p is None:
                     continue
+                if small is None or float(np.linalg.norm(mean_lab(small) - mean_lab(p))) <= MAX_COLOUR:
+                    img, pic = c, p
+                    break
+            if img is None:
+                continue
             file = slug(k.replace("|", " ")) + ".jpg"
             matches[k] = {"how": "name", "catalog": img["catalog"], "page": img["page"], "src": img["path"],
                           "file": file, "px": save_pair(pic, file, out)}
