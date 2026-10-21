@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Garg Tiles</title>
+  <meta name="theme-color" content="#1f2a37">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Garg Tiles">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <span class="brand">Garg Tiles</span>
+    <button id="logout" class="link" hidden>Log out</button>
+  </header>
+
+  <main>
+    <section id="login-view" hidden>
+      <h1>Sign in</h1>
+      <form id="login-form">
+        <label>Email <input type="email" name="email" autocomplete="username" required></label>
+        <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+        <button type="submit" class="primary">Sign in</button>
+        <p id="login-error" class="error" hidden></p>
+      </form>
+    </section>
+
+    <section id="search-view" hidden>
+      <form id="search-form" class="search">
+        <input id="q" type="search" placeholder="Tile name, e.g. Statuario" autocomplete="off" enterkeyhint="search">
+        <button type="submit" class="primary">Search</button>
+      </form>
+      <p id="status" class="muted"></p>
+      <ul id="results" class="grid"></ul>
+    </section>
+
+    <section id="tile-view" hidden>
+      <button id="back" class="link">‹ Back</button>
+      <div id="tile"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+:root {
+  --bg: #f6f5f2; --card: #fff; --ink: #1f2a37; --muted: #6b7280;
+  --line: #e5e2dc; --accent: #b4542f; --error: #b91c1c;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14181d; --card: #1d232a; --ink: #eef0f2; --muted: #9aa3ad; --line: #2c343d; --accent: #e07b52; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.bar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--ink); color: var(--bg); }
+.brand { font-weight: 700; letter-spacing: .02em; }
+main { max-width: 900px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.4rem; }
+label { display: block; margin: 0 0 12px; font-size: .9rem; color: var(--muted); }
+input { display: block; width: 100%; margin-top: 4px; padding: 12px; font: inherit; color: var(--ink);
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+button { font: inherit; cursor: pointer; }
+.primary { padding: 12px 18px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; }
+.link { background: none; border: 0; color: inherit; padding: 6px 0; }
+#tile-view .link { color: var(--accent); }
+.search { display: flex; gap: 8px; }
+.search input { margin: 0; }
+.muted { color: var(--muted); font-size: .9rem; }
+.error { color: var(--error); }
+.grid { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.card button { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
+.card img, .thumb-empty { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--line); }
+.card .info { padding: 8px 10px 10px; }
+.card .name { font-weight: 600; }
+.hero { width: 100%; max-height: 70vh; object-fit: contain; background: var(--line); border-radius: 12px; }
+.offer { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 10px 0; }
+.offer h3 { margin: 0 0 6px; font-size: 1rem; }
+.price { font-size: 1.2rem; font-weight: 700; }
+.cost { color: var(--accent); font-weight: 600; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0 0; font-size: .9rem; }
+dt { color: var(--muted); }
+dd { margin: 0; }
