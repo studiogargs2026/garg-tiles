@@ -10,7 +10,8 @@ Needs GARG_UPLOAD_TOKEN in the environment (see supabase/functions/admin-upload)
 Pricing: net cost = list rate x (1 - discount %), per sq ft (box rates are divided by the
 sq ft in a box when known). This is the price before insurance and GST. Only admins see it.
 Suggested selling price (Kirti, 2026-10-21) = (net cost + transport) x 1.18 GST x 2, where
-transport per sq ft is Rs 12 up to 9 mm thick, Rs 15 above 9 up to 13 mm, Rs 20 above 13 mm.
+transport per sq ft is Rs 12 up to 9 mm thick, Rs 15 above 9 up to 13 mm, Rs 20 above 13 mm,
+and Rs 25 for every Timex tile whatever the thickness.
 """
 import json
 import os
@@ -55,14 +56,19 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:80]
 
 
-def transport(mm):
+FIXED_TRANSPORT = {"Timex Ceramic": 25}
+
+
+def transport(brand, mm):
+    if brand in FIXED_TRANSPORT:
+        return FIXED_TRANSPORT[brand]
     return 12 if mm <= 9 else 15 if mm <= 13 else 20
 
 
-def selling_price(net, unit, mm):
+def selling_price(net, unit, brand, mm):
     if net is None or unit != "sq ft":
         return None
-    return round((net + transport(mm)) * 1.18 * 2, 2)
+    return round((net + transport(brand, mm)) * 1.18 * 2, 2)
 
 
 class Specs:
@@ -123,7 +129,7 @@ def main(tiles_path, work):
                 price, unit, note = net_cost(o)
                 mm, kg = specs.lookup(d, o.get("size"))
                 tally["thickness from catalog" if mm else "thickness assumed 9 mm"] += 1
-                if not mm:
+                if not mm and d["brand"] not in FIXED_TRANSPORT:
                     note = " ".join(filter(None, [note, "Thickness not in catalog, 9 mm assumed for selling price."]))
                 sig = (o.get("size"), o.get("finish"), o.get("line"), price)
                 if sig in seen:
@@ -131,7 +137,7 @@ def main(tiles_path, work):
                 seen.add(sig)
                 offers.append({"tile_id": ids[key(d["brand"], d["name"])], "size": o.get("size"), "finish": o.get("finish"),
                                "series": o.get("line"), "unit": unit, "packing": o.get("box"), "box_sqft": o.get("boxSqft"),
-                               "thickness_mm": mm, "weight_kg": kg, "selling_price": selling_price(price, unit, mm or 9),
+                               "thickness_mm": mm, "weight_kg": kg, "selling_price": selling_price(price, unit, d["brand"], mm or 9),
                                "note": " ".join(filter(None, [note, o.get("extra")])) or None})
                 costs.append(price)
         made = call("rows", offers, table="offers")["rows"]
