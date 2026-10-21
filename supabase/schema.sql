@@ -247,3 +247,55 @@ create or replace function public.highlighter_thumbs() returns text[] language s
     or coalesce(o.series, '') || ' ' || coalesce(o.finish, '') ~* '(highlight|\mhl\M|decor|décor|\mdeco\M|mosaic|inlay|listello)');
 $$;
 grant execute on function public.highlighter_thumbs() to authenticated;
+
+-- Two showrooms (2026-10-21): Garg's Studio ('gs') and KP Enterprises ('kp'). Everyone picks a
+-- showroom after signing in; the app's look, the PDFs and the letterhead follow it. Each person
+-- sees only their own selections and quotations, admins see all of them.
+alter table public.selections add column if not exists showroom text not null default 'gs' check (showroom in ('gs', 'kp'));
+alter table public.selections add column if not exists total numeric;     -- grand total, for the admin summary
+alter table public.profiles add column if not exists showroom text check (showroom in ('gs', 'kp'));
+create index if not exists selections_owner on public.selections (created_by, updated_at desc);
+alter policy selections_read on public.selections
+  using (public.is_staff() and (created_by = auth.uid() or public.is_admin()));
+alter policy selections_add on public.selections
+  with check (public.is_staff() and created_by = auth.uid());
+alter policy selections_edit on public.selections
+  using (public.is_staff() and (created_by = auth.uid() or public.is_admin()))
+  with check (public.is_staff() and (created_by = auth.uid() or public.is_admin()));
+
+create or replace function public.set_my_showroom(p_showroom text) returns void
+language sql security definer set search_path = public as $$
+  update profiles set showroom = p_showroom where id = auth.uid() and p_showroom in ('gs', 'kp') and is_staff();
+$$;
+revoke execute on function public.set_my_showroom(text) from public, anon;
+grant execute on function public.set_my_showroom(text) to authenticated;
+
+-- Letterheads: app_settings 'business' (Garg's Studio) and 'business_kp' (KP Enterprises).
+-- Quote numbers run per showroom and financial year; staff cannot see each other's quotes, so the
+-- database counts. KP writes them year first (26-27/01, quote_style 'year-first'); quote_start in
+-- the letterhead lets the numbers carry on from a showroom's old quote book.
+create or replace function public.next_quote_no(p_showroom text) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  today date := (now() at time zone 'Asia/Kolkata')::date;
+  fy int := case when extract(month from today) >= 4 then extract(year from today)::int else extract(year from today)::int - 1 end;
+  tag text := right(fy::text, 2) || '-' || right((fy + 1)::text, 2);
+  biz jsonb := (select value from app_settings where key = case p_showroom when 'kp' then 'business_kp' else 'business' end);
+  year_first boolean := biz ->> 'quote_style' = 'year-first';
+  top int;
+begin
+  if not is_staff() then raise exception 'Not signed in'; end if;
+  if year_first then
+    select coalesce(max(nullif(substring(quote_no from '/(\d+)$'), '')::int), 0) into top
+      from selections where showroom = p_showroom and quote_no like tag || '/%';
+  else
+    select coalesce(max(nullif(substring(quote_no from '^(\d+)/'), '')::int), 0) into top
+      from selections where showroom = p_showroom and quote_no like '%/' || tag;
+  end if;
+  top := greatest(top, coalesce((biz ->> 'quote_start')::int, 1) - 1);
+  return case when year_first then tag || '/' || lpad((top + 1)::text, 2, '0')
+              else lpad((top + 1)::text, 2, '0') || '/' || tag end;
+end;
+$$;
+revoke execute on function public.next_quote_no(text) from public, anon;
+grant execute on function public.next_quote_no(text) to authenticated;
