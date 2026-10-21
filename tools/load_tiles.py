@@ -9,7 +9,8 @@ Needs GARG_UPLOAD_TOKEN in the environment (see supabase/functions/admin-upload)
 
 Pricing: net cost = list rate x (1 - discount %), per sq ft (box rates are divided by the
 sq ft in a box when known). This is the price before insurance and GST. Only admins see it.
-Suggested selling price (Kirti, 2026-10-21) = (net cost + transport) x 1.18 GST x 2, where
+Suggested selling price (Kirti, 2026-10-21) = (net cost + transport) x 1.18 GST x 2 (x 1.5 for
+600x1200 tiles costing under Rs 40/sq ft), rounded to whole rupees, where
 transport per sq ft is Rs 12 up to 9 mm thick, Rs 15 above 9 up to 13 mm, Rs 20 above 13 mm,
 and Rs 25 for every Timex tile whatever the thickness.
 """
@@ -65,10 +66,15 @@ def transport(brand, mm):
     return 12 if mm <= 9 else 15 if mm <= 13 else 20
 
 
-def selling_price(net, unit, brand, mm):
+def margin(size, net):
+    # basic plain glossy / matt / carving 600x1200 tiles: cost below Rs 40/sq ft sell at x1.5 (Kirti, 2026-10-21)
+    return 1.5 if size == "60x120 cm" and net < 40 else 2
+
+
+def selling_price(net, unit, brand, mm, size=None):
     if net is None or unit != "sq ft":
         return None
-    return round((net + transport(brand, mm)) * 1.18 * 2)   # whole rupees (Kirti, 2026-10-21)
+    return round((net + transport(brand, mm)) * 1.18 * margin(size, net))   # whole rupees (Kirti, 2026-10-21)
 
 
 class Specs:
@@ -173,7 +179,7 @@ def main(tiles_path, work):
                 seen.add(sig)
                 offers.append({"tile_id": ids[key(d["brand"], d["name"])], "size": o.get("size"), "finish": o.get("finish"),
                                "series": o.get("line"), "unit": unit, "packing": o.get("box"), "box_sqft": o.get("boxSqft"),
-                               "thickness_mm": mm, "weight_kg": kg, "selling_price": selling_price(price, unit, d["brand"], mm or 9),
+                               "thickness_mm": mm, "weight_kg": kg, "selling_price": selling_price(price, unit, d["brand"], mm or 9, o.get("size")),
                                "note": " ".join(filter(None, [note, o.get("extra")])) or None})
                 costs.append(price)
         made = call("rows", offers, table="offers")["rows"]
