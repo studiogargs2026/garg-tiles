@@ -17,6 +17,7 @@ import pymupdf
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from load_tiles import key, split_decors  # noqa: E402
 from match_pictures import read, save_pair, slug  # noqa: E402
+from name_layout_pictures import ratios  # noqa: E402
 
 
 def norm(text):
@@ -70,22 +71,31 @@ def main(tiles_path, work):
     found = 0
     for d in decors:
         want = " " + norm(d["name"]) + " "
-        # every picture printed near the decor's name on any page; the biggest close one wins,
-        # so a large face on the decor's own page beats a small swatch on an index page
+        # every picture printed near the decor's name on any page and shaped like the tile (so not a
+        # room photo); the biggest close one wins, so a large face beats a small swatch on an index page
+        want_r = ratios(d)
         best = None
         for folder, page, blocks in pages:
             for rect, text in blocks:
                 if want not in text:
                     continue
                 for img in images.get((folder, page), []):
-                    if img["w"] * img["h"] < 150 * 150:
+                    w, h = img["w"], img["h"]
+                    if w * h < 150 * 150 or not any(abs(max(w, h) / min(w, h) / r - 1) < 0.08 for r in want_r):
                         continue
                     score = img["w"] * img["h"] / (1 + distance(rect, img["bbox"]) / 40) ** 2
                     if best is None or score > best[0]:
                         best = (score, img)
-        if not best:
+        hit = best[1] if best else None
+        if not hit:
+            # no tile-shaped picture: the one printed just above (or below) the name
+            for folder, page, blocks in pages:
+                hit = next((h for rect, text in blocks if want in text
+                            for h in [picture_near(rect, images.get((folder, page), []))] if h), None)
+                if hit:
+                    break
+        if not hit:
             continue
-        hit = best[1]
         img = read(os.path.join(work, "pics", hit["path"]))
         if img is None:
             continue
