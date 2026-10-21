@@ -1,6 +1,6 @@
 {
-  "name": "Garg Tiles",
-  "short_name": "Garg Tiles",
+  "name": "Master View",
+  "short_name": "Master View",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

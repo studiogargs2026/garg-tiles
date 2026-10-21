@@ -1,6 +1,6 @@
 # Garg Tiles
 
-Phone app for the Garg Studio sales team: search tiles by name or photo, see catalog
+Phone app "Master View" for the Garg Studio and KP Enterprises sales teams: search tiles by name or photo, see catalog
 pictures, sizes, finishes, packing and suggested selling price. Admins also see cost price.
 
 - **App**: plain HTML/JS in this folder, served by GitHub Pages. Staff open the link and
