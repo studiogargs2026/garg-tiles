@@ -12,7 +12,8 @@ script runs the very same model file on every catalog picture beforehand.
   photo_vectors.py vectors MODEL.onnx THUMBS OUT_DIR
       Fingerprints every picture in THUMBS (320px webp named as in the bucket's thumb/ folder),
       six parts per picture (whole, middle, four corners) so a close-up of part of a tile still
-      matches. Writes OUT_DIR/vectors.bin (int8) and OUT_DIR/meta.json. Which tiles are
+      matches, and marks pictures showing a whole room (room_picture_weights.json) so they are
+      never offered. Writes OUT_DIR/vectors.bin (int8) and OUT_DIR/meta.json. Which tiles are
       highlighters the app asks the database (highlighter_thumbs), so that stays current.
   Then upload both files to photo/ in the bucket:
       GARG_UPLOAD_TOKEN=... photo_vectors.py send OUT_DIR
@@ -122,12 +123,18 @@ def make_vectors(model, folder, out_dir):
     q = np.round(V / np.abs(V).max(1, keepdims=True) * 127).astype(np.int8)   # each row scaled on its own
     q.tofile(os.path.join(out_dir, 'vectors.bin'))
     paths = ['thumb/' + f for f in files]
+    # pictures of a whole room (not the tile itself) are never offered as matches
+    rw = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'room_picture_weights.json')))
+    whole = V[::len(PARTS)]
+    room_p = 1 / (1 + np.exp(-(whole @ np.array(rw['weights']) + rw['bias'])))
     meta = {
         'model': 'tile-match-v1', 'dim': int(V.shape[1]), 'per': len(PARTS), 'paths': paths,
+        'room': [int(i) for i in np.flatnonzero(room_p > rw['threshold'])],
+        'roomCheck': {k: rw[k] for k in ('weights', 'bias', 'threshold')},
         'made': time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime()),
     }
     json.dump(meta, open(os.path.join(out_dir, 'meta.json'), 'w'), separators=(',', ':'))
-    print(f'{len(files)} pictures -> {out_dir}')
+    print(f'{len(files)} pictures ({len(meta["room"])} show a room) -> {out_dir}')
 
 
 def send(out_dir):
