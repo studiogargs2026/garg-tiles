@@ -557,12 +557,12 @@ let fontFiles = null;
 const FONTS = [['Poppins-400.ttf', 'Poppins', 'normal'], ['Poppins-600.ttf', 'Poppins', 'bold'], ['Playfair-700.ttf', 'Playfair', 'bold']];
 
 // Poppins prints the ₹ sign; Playfair (close to the logo's lettering) is for headings only
-async function startPdf(options) {
+async function startPdf(options, roomId = roomOf(sel)) {
   const doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4', ...options });
   fontFiles ||= await Promise.all(FONTS.map(async ([f]) => (await staticData('vendor/fonts/' + f)).split(',')[1]));
   FONTS.forEach(([f, name, style], i) => { doc.addFileToVFS(f, fontFiles[i]); doc.addFont(f, name, style); });
-  const room = SHOWROOMS[roomOf(sel)];
-  C = PALETTES[roomOf(sel)];
+  const room = SHOWROOMS[roomId];
+  C = PALETTES[roomId];
   logoData = logos[room.logo] ||= await staticData(room.logo);
   LOGO_RATIO = room.logoRatio;
   return doc;

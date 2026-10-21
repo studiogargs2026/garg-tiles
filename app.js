@@ -286,11 +286,12 @@ async function openTile(id) {
   ]);
   shownTile = { full, offers: offers || [] };
   const costs = isAdmin || costPin ? await lookupCosts(offers || []) : null;
-  const urls = await signedUrls([full.image_path]);
+  const [urls, stock] = await Promise.all([signedUrls([full.image_path]), window.tileStockHtml?.(id).catch(() => '')]);
   $('tile').innerHTML = `
     ${urls[full.image_path] ? `<img class="hero" src="${urls[full.image_path]}" alt="${esc(full.name)}">` : ''}
     <h1>${esc(full.name)}</h1>
     <p class="muted">${esc(full.brand)}${full.catalog ? ' · ' + esc(full.catalog) : ''}</p>
+    ${stock || ''}
     ${(offers || []).map((o) => offerHtml(o, costs?.[o.id])).join('') || '<p>No sizes listed yet.</p>'}
     ${!costs && offers?.length ? '<button id="show-cost" class="link">Show cost price</button><p id="cost-error" class="error" hidden></p>' : ''}
     ${full.notes ? `<p class="muted">${esc(full.notes)}</p>` : ''}`;
