@@ -302,14 +302,41 @@ window.pickTile = async function (id) {
     db.from('tiles').select('id, brand, name, image_path, thumb_path').eq('id', id).single(),
     db.from('offers').select('size, finish, packing, box_sqft, selling_price, unit').eq('tile_id', id).order('size'),
   ]);
-  const it = { kind: 'tile', ...t, offers: offers || [], pick: 0, role: 'Wall', sqft: '', boxes: '', code: null };
-  it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || '';
-  it.pdfName = sel.data.nameStyle === 'short' ? shortName(it.name) : sel.data.nameStyle === 'code' ? (it.code = newCode()) : it.name;
-  area.items.push(it);
+  area.items.push(tileItem(t, offers, 'Wall'));
   history.back();            // back to the selection (goBack stays put on the search screen)
   renderSelection();
   changed(true);
   return true;
+};
+
+function tileItem(t, offers, role) {
+  const it = { kind: 'tile', ...t, offers: offers || [], pick: 0, role, sqft: '', boxes: '', code: null };
+  it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || '';
+  it.pdfName = sel.data.nameStyle === 'short' ? shortName(it.name) : sel.data.nameStyle === 'code' ? (it.code = newCode()) : it.name;
+  return it;
+}
+
+// photo.js calls this: a new selection with one area holding the given tiles [{id, role}]
+window.startSelectionWith = async function (picks, areaName) {
+  const draft = readDraft();
+  if (draft?.sel && !draft.sel.id && (draft.sel.client || draft.sel.data?.areas?.length)
+    && !confirm('You have an unfinished selection that is not saved online. Start a new one anyway?')) return;
+  const ids = picks.map((p) => p.id);
+  const [{ data: tiles }, { data: offers }] = await Promise.all([
+    db.from('tiles').select('id, brand, name, image_path, thumb_path').in('id', ids),
+    db.from('offers').select('tile_id, size, finish, packing, box_sqft, selling_price, unit').in('tile_id', ids).order('size'),
+  ]);
+  sel = blankSelection();
+  const area = { name: areaName, items: [] };
+  for (const p of picks) {
+    const t = (tiles || []).find((x) => x.id === p.id);
+    if (t) area.items.push(tileItem(t, (offers || []).filter((o) => o.tile_id === p.id).map(({ tile_id, ...o }) => o), p.role));
+  }
+  sel.data.areas.push(area);
+  renderSelection();
+  show('selection-view');
+  changed(true);
+  draftNote('Made from the photo. Change or remove any tile, then type the client\'s name.');
 };
 
 // ---------- saving and drafts ----------

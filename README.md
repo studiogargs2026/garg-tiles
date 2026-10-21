@@ -18,4 +18,11 @@ pictures, sizes, finishes, packing and suggested selling price. Admins also see 
   make one with `python3 -c "import secrets;print(secrets.token_urlsafe(32))"` and store its
   sha256 in `public.upload_tokens`.
 
+**Photo search** (`photo.js`) runs a free picture model on the phone (ConvNeXt-Tiny via
+onnxruntime-web, in `vendor/`), so no paid service is used. After pictures change, refresh the
+catalog fingerprints (THUMBS = a folder of the bucket's 320px `thumb/` files, ~35 min on 4 CPUs):
+`tools/photo_vectors.py vectors vendor/model/tile-match-v1.onnx THUMBS OUT`, then
+`GARG_UPLOAD_TOKEN=... tools/photo_vectors.py send OUT`. Phones pick up the new fingerprints the
+next time Photo is opened. Highlighter options come from `highlighter_thumbs()` in the database.
+
 No prices or catalog files are kept in this repository.
