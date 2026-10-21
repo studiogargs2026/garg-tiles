@@ -108,13 +108,23 @@ class Specs:
                 for size, v in self.specs.get(f, {}).get("sizes", {}).items():
                     self.brand_size[(brand, size)][v["mm"]] += 1
 
+    def own(self, brand, files):
+        """The brand's own catalogs first: a tile whose picture also turned up in another brand's
+        catalog must not take that catalog's thickness first (Simero 80x160 got 15 mm)."""
+        word = slug(brand).split("-")[0]
+        files = list(dict.fromkeys(f for f in files if f))
+        return [f for f in files if word in f] + [f for f in files if word not in f]
+
     def lookup(self, d, size):
-        files = [self.file_of.get(key(d["brand"], d["name"]))] + self.title_files.get((d["brand"], d.get("catalog")), [])
-        for f in filter(None, files):
+        stated = re.search(r"\((\d{1,2}(?:\.\d)?)\s*mm\)", size or "")   # "60x60 cm (12 mm)"
+        if stated:
+            return float(stated.group(1)), None
+        files = self.own(d["brand"], [self.file_of.get(key(d["brand"], d["name"]))] + self.title_files.get((d["brand"], d.get("catalog")), []))
+        for f in files:
             spec = self.specs.get(f, {})
             if size in spec.get("sizes", {}):
                 return spec["sizes"][size]["mm"], spec["sizes"][size]["kg"]
-        for f in filter(None, files):
+        for f in files:
             if self.specs.get(f, {}).get("mm"):
                 return self.specs[f]["mm"], None
         same = self.brand_size.get((d["brand"], size))
