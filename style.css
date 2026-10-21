@@ -37,3 +37,8 @@ button { font: inherit; cursor: pointer; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0 0; font-size: .9rem; }
 dt { color: var(--muted); }
 dd { margin: 0; }
+h2 { font-size: 1.05rem; margin-top: 24px; }
+.bar .link { margin-left: 14px; }
+select { display: block; width: 100%; margin-top: 4px; padding: 12px; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.plain { padding-left: 18px; }
+.plain li { margin: 6px 0; }

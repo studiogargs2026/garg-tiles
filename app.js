@@ -1,9 +1,11 @@
 const { supabaseUrl, supabaseKey } = window.GARG_CONFIG;
 const db = supabase.createClient(supabaseUrl, supabaseKey);
 const $ = (id) => document.getElementById(id);
-const views = ['login-view', 'search-view', 'tile-view'];
+const views = ['login-view', 'search-view', 'tile-view', 'admin-view'];
 let isAdmin = false;
 let lastResults = [];
+let costPin = null;          // remembered until the app is closed, so the PIN is typed once
+let shownTile = null;
 
 function show(view) {
   views.forEach((v) => ($(v).hidden = v !== view));
@@ -28,21 +30,43 @@ async function signedUrls(paths) {
 
 async function startSession(session) {
   $('logout').hidden = !session;
+  $('admin').hidden = true;
   if (!session) return show('login-view');
-  const { data } = await db.from('profiles').select('role').eq('id', session.user.id).single();
-  isAdmin = data?.role === 'admin';
+  const { data } = await db.rpc('is_admin');
+  isAdmin = data === true;
+  $('admin').hidden = !isAdmin;
   show('search-view');
+}
+
+let signingUp = false;
+
+$('toggle-signup').addEventListener('click', () => {
+  signingUp = !signingUp;
+  $('login-view').querySelector('h1').textContent = signingUp ? 'Create your password' : 'Sign in';
+  $('login-btn').textContent = signingUp ? 'Create account' : 'Sign in';
+  $('toggle-signup').textContent = signingUp ? 'Already have a password? Sign in' : 'First time here? Create your password';
+  $('login-form').password.autocomplete = signingUp ? 'new-password' : 'current-password';
+});
+
+function loginError(text) {
+  $('login-error').textContent = text;
+  $('login-error').hidden = !text;
 }
 
 $('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const form = new FormData(e.target);
-  $('login-error').hidden = true;
-  const { error } = await db.auth.signInWithPassword({ email: form.get('email'), password: form.get('password') });
-  if (error) {
-    $('login-error').textContent = 'Wrong email or password.';
-    $('login-error').hidden = false;
+  const email = e.target.email.value.trim().toLowerCase();
+  const password = e.target.password.value;
+  loginError('');
+  if (signingUp) {
+    const res = await fetch(`${supabaseUrl}/functions/v1/signup`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
+    }).catch(() => null);
+    const body = res ? await res.json().catch(() => ({})) : { error: 'No internet connection.' };
+    if (!res?.ok) return loginError(body.error || 'Could not create the account.');
   }
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if (error) loginError('Wrong email or password.');
 });
 
 $('logout').addEventListener('click', () => db.auth.signOut());
@@ -81,17 +105,15 @@ async function openTile(id) {
     db.from('tiles').select('*').eq('id', id).single(),
     db.from('offers').select('*').eq('tile_id', id).order('size'),
   ]);
-  let costs = {};
-  if (isAdmin && offers?.length) {
-    const { data } = await db.from('offer_costs').select('*').in('offer_id', offers.map((o) => o.id));
-    costs = Object.fromEntries((data || []).map((c) => [c.offer_id, c]));
-  }
+  shownTile = { full, offers: offers || [] };
+  const costs = isAdmin || costPin ? await lookupCosts(offers || []) : null;
   const urls = await signedUrls([full.image_path]);
   $('tile').innerHTML = `
     ${urls[full.image_path] ? `<img class="hero" src="${urls[full.image_path]}" alt="${esc(full.name)}">` : ''}
     <h1>${esc(full.name)}</h1>
     <p class="muted">${esc(full.brand)}${full.catalog ? ' · ' + esc(full.catalog) : ''}</p>
-    ${(offers || []).map((o) => offerHtml(o, costs[o.id])).join('') || '<p>No sizes listed yet.</p>'}
+    ${(offers || []).map((o) => offerHtml(o, costs?.[o.id])).join('') || '<p>No sizes listed yet.</p>'}
+    ${!costs && offers?.length ? '<button id="show-cost" class="link">Show cost price</button><p id="cost-error" class="error" hidden></p>' : ''}
     ${full.notes ? `<p class="muted">${esc(full.notes)}</p>` : ''}`;
   if (!tile) lastResults.push(full);
 }
@@ -101,7 +123,7 @@ function offerHtml(o, cost) {
   return `<div class="offer">
     <h3>${esc(o.size)}${o.finish ? ' · ' + esc(o.finish) : ''}</h3>
     <div class="price">${rupees(o.selling_price)} <span class="muted">${per}</span></div>
-    ${isAdmin && cost ? `<div class="cost">Cost: ${rupees(cost.net_cost)} ${per}</div>` : ''}
+    ${cost !== undefined ? `<div class="cost">Cost: ${rupees(cost)} ${per}</div>` : ''}
     <dl>
       ${o.packing ? `<dt>Packing</dt><dd>${esc(o.packing)}</dd>` : ''}
       ${o.weight_kg ? `<dt>Weight</dt><dd>${esc(o.weight_kg)} kg per box</dd>` : ''}
@@ -110,6 +132,82 @@ function offerHtml(o, cost) {
     </dl>
   </div>`;
 }
+
+// Returns {offerId: cost} or null; non-admins need the PIN.
+async function lookupCosts(offers) {
+  if (!offers.length) return {};
+  const { data, error } = await db.rpc('cost_lookup', { offer_ids: offers.map((o) => o.id), pin: costPin });
+  if (error || data.error) {
+    costPin = null;
+    lastCostError = error ? 'Could not load cost price.' : data.error;
+    return null;
+  }
+  return data.costs;
+}
+let lastCostError = '';
+
+$('tile').addEventListener('click', async (e) => {
+  if (e.target.id !== 'show-cost') return;
+  const pin = prompt('Enter the cost price PIN');
+  if (!pin) return;
+  costPin = pin.trim();
+  const costs = await lookupCosts(shownTile.offers);
+  if (!costs) {
+    $('cost-error').textContent = lastCostError;
+    $('cost-error').hidden = false;
+    return;
+  }
+  openTile(shownTile.full.id);
+});
+
+$('admin').addEventListener('click', async () => {
+  show('admin-view');
+  loadStaff();
+  const { data: locked } = await db.from('pin_attempts').select('user_id, failed').eq('locked', true);
+  const ids = (locked || []).map((l) => l.user_id);
+  const { data: people } = ids.length ? await db.from('profiles').select('id, full_name').in('id', ids) : { data: [] };
+  const names = Object.fromEntries((people || []).map((p) => [p.id, p.full_name || 'Unnamed']));
+  $('locked-list').innerHTML = ids.length
+    ? ids.map((id) => `<li>${esc(names[id] || id)} <button class="link" data-unlock="${id}">Unlock</button></li>`).join('')
+    : '<li class="muted">Nobody is locked out.</li>';
+});
+
+async function loadStaff() {
+  const { data } = await db.from('allowed_emails').select('*').order('full_name');
+  $('staff-list').innerHTML = (data || []).map((p) => `<li>${esc(p.full_name || '')} · ${esc(p.email)} · ${p.role === 'admin' ? 'Admin' : 'Sales'}
+    <button class="link" data-remove="${esc(p.email)}">Remove</button></li>`).join('');
+}
+
+$('staff-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const row = { full_name: $('staff-name').value.trim(), email: $('staff-email').value.trim().toLowerCase(), role: $('staff-role').value };
+  const { error } = await db.from('allowed_emails').upsert(row);
+  $('staff-msg').textContent = error ? 'Could not add: ' + error.message : `${row.full_name} added. They can now create their password in the app.`;
+  if (!error) { e.target.reset(); loadStaff(); }
+});
+
+$('staff-list').addEventListener('click', async (e) => {
+  const email = e.target.dataset.remove;
+  if (!email || !confirm(`Remove ${email}? They will lose access to the app straight away.`)) return;
+  await db.from('allowed_emails').delete().eq('email', email);
+  loadStaff();
+});
+
+$('locked-list').addEventListener('click', async (e) => {
+  const id = e.target.dataset.unlock;
+  if (!id) return;
+  await db.rpc('unlock_pin', { target: id });
+  e.target.closest('li').remove();
+});
+
+$('pin-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const { error } = await db.rpc('set_cost_pin', { new_pin: $('new-pin').value.trim() });
+  $('pin-msg').textContent = error ? error.message : 'PIN saved.';
+  if (!error) $('new-pin').value = '';
+});
+
+$('admin-back').addEventListener('click', () => show('search-view'));
 
 db.auth.onAuthStateChange((_event, session) => startSession(session));
 

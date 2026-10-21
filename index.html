@@ -15,7 +15,10 @@
 <body>
   <header class="bar">
     <span class="brand">Garg Tiles</span>
-    <button id="logout" class="link" hidden>Log out</button>
+    <span>
+      <button id="admin" class="link" hidden>Admin</button>
+      <button id="logout" class="link" hidden>Log out</button>
+    </span>
   </header>
 
   <main>
@@ -24,9 +27,10 @@
       <form id="login-form">
         <label>Email <input type="email" name="email" autocomplete="username" required></label>
         <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
-        <button type="submit" class="primary">Sign in</button>
+        <button type="submit" class="primary" id="login-btn">Sign in</button>
         <p id="login-error" class="error" hidden></p>
       </form>
+      <p class="muted"><button id="toggle-signup" class="link">First time here? Create your password</button></p>
     </section>
 
     <section id="search-view" hidden>
@@ -41,6 +45,32 @@
     <section id="tile-view" hidden>
       <button id="back" class="link">‹ Back</button>
       <div id="tile"></div>
+    </section>
+    <section id="admin-view" hidden>
+      <button id="admin-back" class="link">‹ Back</button>
+      <h1>Admin</h1>
+      <h2>Cost price PIN</h2>
+      <p class="muted">Staff who are not admins type this PIN to see cost price.</p>
+      <form id="pin-form" class="search">
+        <input id="new-pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" placeholder="New PIN (4 to 8 digits)" required>
+        <button type="submit" class="primary">Save</button>
+      </form>
+      <p id="pin-msg" class="muted"></p>
+      <h2>Staff</h2>
+      <p class="muted">Add someone's email here, then they open the app, tap "First time here?" and choose a password.</p>
+      <form id="staff-form">
+        <label>Name <input id="staff-name" required></label>
+        <label>Email <input id="staff-email" type="email" required></label>
+        <label>Role
+          <select id="staff-role"><option value="sales">Sales (no cost price)</option><option value="admin">Admin (sees cost price)</option></select>
+        </label>
+        <button type="submit" class="primary">Add</button>
+      </form>
+      <p id="staff-msg" class="muted"></p>
+      <ul id="staff-list" class="plain"></ul>
+      <h2>Locked out</h2>
+      <p class="muted">People who typed a wrong PIN 5 times.</p>
+      <ul id="locked-list"></ul>
     </section>
   </main>
 
