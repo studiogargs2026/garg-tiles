@@ -127,7 +127,7 @@ function offerHtml(o, cost) {
   const per = o.unit === 'box' ? 'per box' : 'per sq ft';
   return `<div class="offer">
     <h3>${esc(o.size)}${o.finish ? ' · ' + esc(o.finish) : ''}</h3>
-    <div class="muted">Suggested selling price</div>
+    <div class="muted">Selling price</div>
     <div class="price">${rupees(o.selling_price)} <span class="muted">${per}</span></div>
     ${cost !== undefined ? `<div class="cost">Cost: ${rupees(cost)} ${per}</div>` : ''}
     <dl>
