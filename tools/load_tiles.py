@@ -85,6 +85,15 @@ class Specs:
             if f:
                 by_title[(d["brand"], d.get("catalog"))][f] += 1
         self.title_files = {t: [f for f, _ in c.most_common()] for t, c in by_title.items()}
+        # fallback: what this brand's catalogs say for the same size
+        brand_files = defaultdict(set)
+        for (brand, _), files in self.title_files.items():
+            brand_files[brand].update(files)
+        self.brand_size = defaultdict(Counter)
+        for brand, files in brand_files.items():
+            for f in files:
+                for size, v in self.specs.get(f, {}).get("sizes", {}).items():
+                    self.brand_size[(brand, size)][v["mm"]] += 1
 
     def lookup(self, d, size):
         files = [self.file_of.get(key(d["brand"], d["name"]))] + self.title_files.get((d["brand"], d.get("catalog")), [])
@@ -95,6 +104,9 @@ class Specs:
         for f in filter(None, files):
             if self.specs.get(f, {}).get("mm"):
                 return self.specs[f]["mm"], None
+        same = self.brand_size.get((d["brand"], size))
+        if same:
+            return same.most_common(1)[0][0], None
         return None, None
 
 
