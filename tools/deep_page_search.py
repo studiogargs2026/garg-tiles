@@ -22,12 +22,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from match_pictures import read, save_pair, slug, tile_features  # noqa: E402
 
 PAGE_POINTS = 2500
+CHUNK = 300         # pages per search index
 BRAND_WORDS = {
     "Icon": ["icon"], "Itaca": ["itaca"], "Renite": ["renite"], "Morson": ["morson"], "Oasis": ["oasis"],
     "Nexona": ["nexona", "nx-royal"], "Colortile": ["colortile", "vita", "bi-mor", "evardo", "vistaro"],
     "Simero": ["simero"], "Seron": ["seron"], "Velbon": ["velbon"], "Subway Tiles LLP": ["subway"],
     "Skyart": ["skyart"], "GruppoNueva": ["grupponueva"], "Status Ceramic": ["status"],
     "Timex Ceramic": ["lookbook", "tmx"],
+    "BEJ": ["bej", "athangudi", "moroccan", "cotto-series", "5-subway-series", "jewel", "rock-series", "interstone",
+            "cool-roof", "swimming-pool", "30x30-master"],
 }
 
 
@@ -100,38 +103,45 @@ def main(old_dir, work):
     total, found = sum(len(v) for v in todo.values()), 0
     print(f"{total} tiles to look for", flush=True)
 
-    with ProcessPoolExecutor() as pool:
+    with ProcessPoolExecutor(3) as pool:
         for brand, keys in sorted(todo.items(), key=lambda x: -len(x[1])):
-            dirs = brand_folders.get(brand, []) + brand_folders.get(None, [])
+            dirs = brand_folders.get(brand, [])
             pages = sorted(p for d in dirs for p in glob.glob(os.path.join(pics_dir, d, "page*.jpg")))
             if not pages:
                 continue
-            feats = list(pool.map(page_features, pages, chunksize=8))
             tile_feats = list(pool.map(tile_features, [old[k] for k in keys], chunksize=8))
-            owner, points, descs = [], [], []
-            for n, f in enumerate(feats):
-                if f is not None:
-                    owner.append(np.full(len(f[0]), n)); points.append(f[0]); descs.append(f[1])
-            owner, points = np.concatenate(owner), np.concatenate(points)
-            flann = cv2.FlannBasedMatcher({"algorithm": 1, "trees": 4}, {"checks": 64})
-            flann.add([np.concatenate(descs)])
-            flann.train()
-            hits = 0
-            for k, tf in zip(keys, tile_feats):
-                if tf is None:
+            shapes = {k: read(old[k]).shape[:2] for k, tf in zip(keys, tile_feats) if tf is not None}
+            best_of = {}
+            # a few hundred pages at a time keeps memory in check on big brands
+            for start in range(0, len(pages), CHUNK):
+                chunk = pages[start:start + CHUNK]
+                feats = list(pool.map(page_features, chunk, chunksize=8))
+                owner, points, descs = [], [], []
+                for n, f in enumerate(feats):
+                    if f is not None:
+                        owner.append(np.full(len(f[0]), n)); points.append(f[0]); descs.append(f[1])
+                if not descs:
                     continue
-                best = locate(k, tf, read(old[k]).shape[:2], flann, owner, points, feats)
-                if best:
-                    inliers, page_no, box, pw = best
-                    path = pages[page_no]
-                    matches[k] = {"how": "page", "score": inliers, "catalog": os.path.basename(os.path.dirname(path)),
-                                  "page": int(re.search(r"page(\d+)", path).group(1)),
-                                  "box_px": [round(float(v), 1) for v in box], "preview_w": pw}
-                    hits += 1
+                owner, points = np.concatenate(owner), np.concatenate(points)
+                flann = cv2.FlannBasedMatcher({"algorithm": 1, "trees": 4}, {"checks": 64})
+                flann.add([np.concatenate(descs)])
+                flann.train()
+                for k, tf in zip(keys, tile_feats):
+                    if tf is None:
+                        continue
+                    best = locate(k, tf, shapes[k], flann, owner, points, feats)
+                    if best and (k not in best_of or best[0] > best_of[k][0]):
+                        best_of[k] = (best[0], chunk[best[1]], best[2], best[3])
+                del flann, descs, feats
+            hits = 0
+            for k, (inliers, path, box, pw) in best_of.items():
+                matches[k] = {"how": "page", "score": inliers, "catalog": os.path.basename(os.path.dirname(path)),
+                              "page": int(re.search(r"page(\d+)", path).group(1)),
+                              "box_px": [round(float(v), 1) for v in box], "preview_w": pw}
+                hits += 1
             found += hits
             print(f"{brand}: {hits} of {len(keys)} found ({len(pages)} pages)", flush=True)
             json.dump(matches, open(os.path.join(out, "matches.json"), "w"), indent=0)
-            del flann, descs
 
     docs = {}
     for k, v in matches.items():
