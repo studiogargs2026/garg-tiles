@@ -1,6 +1,7 @@
 """Find each tile's full-quality picture among the pictures pulled out of the catalogs.
 
-Usage: python3 tools/match_pictures.py OLD_PICTURES_DIR TILES.json WORK_DIR
+Usage: python3 tools/match_pictures.py OLD_PICTURES_DIR TILES.json WORK_DIR [yes|no]
+(no = skip the slow search inside pages; tiles found that way keep their old small picture)
 OLD_PICTURES_DIR is the old build folder: brands/*_images.json map "Brand|name" to a small
 picture of that tile. Each small picture is looked up among WORK_DIR/pics (made by
 catalog_pictures.py): first among the pictures stored in the PDFs, then, for tiles printed
@@ -101,7 +102,7 @@ def search_catalog(args):
     return catalog, found
 
 
-def main(old_dir, tiles_path, work):
+def main(old_dir, tiles_path, work, page_search="yes"):
     out = os.path.join(work, "hd")
     os.makedirs(os.path.join(out, "thumb"), exist_ok=True)
 
@@ -172,7 +173,7 @@ def main(old_dir, tiles_path, work):
     file_slug = {r["catalog"]: os.path.dirname(r["path"]) for r in index}
     page_size = {(r["catalog"], r["page"]): r["page_size"] for r in index}
     by_file = defaultdict(list)
-    for k in unmatched:
+    for k in (unmatched if page_search == "yes" else []):
         for f in title_files.get(catalog_of.get(k)) or ():
             by_file[f].append((k, old[k]["path"]))
     jobs = []
@@ -210,4 +211,4 @@ def main(old_dir, tiles_path, work):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:5])

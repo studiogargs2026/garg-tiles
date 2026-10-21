@@ -1,8 +1,8 @@
 """Send the tile list (names, sizes, finishes, packing, prices) to Supabase.
 
-Usage: python3 tools/load_tiles.py TILES.json WORK_DIR
+Usage: python3 tools/load_tiles.py TILES.json DATA_DIR
 TILES.json is the merged list made by the old build (designs with offers).
-From WORK_DIR it reads hd/matches.json (which catalog each tile was found in),
+From DATA_DIR it reads matches.json (which catalog each tile was found in),
 specs.json (thickness and box weight per catalog and size) and pictures.json
 ("Brand|name" -> {"image": path, "thumb": path} in the "tiles" bucket).
 Needs GARG_UPLOAD_TOKEN in the environment (see supabase/functions/admin-upload).
@@ -77,8 +77,8 @@ class Specs:
 
     def __init__(self, designs, work):
         self.specs = json.load(open(os.path.join(work, "specs.json")))
-        matches = json.load(open(os.path.join(work, "hd", "matches.json")))
-        self.file_of = {k: slug(v["catalog"]) for k, v in matches.items()}
+        matches = json.load(open(os.path.join(work, "matches.json")))
+        self.file_of = {key(*k.split("|", 1)): slug(v["catalog"]) for k, v in matches.items()}
         by_title = defaultdict(Counter)
         for d in designs:
             f = self.file_of.get(key(d["brand"], d["name"]))
