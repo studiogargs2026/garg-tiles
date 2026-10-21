@@ -236,3 +236,14 @@ revoke execute on function public.suggest_tiles(text,text,text) from anon;
 revoke execute on function public.browse_tiles(text,text,text,int,int) from anon;
 -- 2026-10-21: browse_tiles and suggest_tiles also rank names with a word starting with the typed text first
 -- (see migration search_word_start_first): order by lower(t.name) ~ ('\m' || q) desc, ...
+
+-- Photo search (photo.js): pictures of highlighter, decor, mosaic and inlay tiles, so a room
+-- photo can be offered highlighter options. The picture fingerprints are files photo/meta.json
+-- and photo/vectors.bin in the tiles bucket, made by tools/photo_vectors.py.
+create or replace function public.highlighter_thumbs() returns text[] language sql stable security invoker set search_path = public as $$
+  select coalesce(array_agg(distinct t.thumb_path), '{}') from tiles t left join offers o on o.tile_id = t.id
+  where t.thumb_path is not null and (
+    t.name ~* '(highlight|\mhl\M|decor|\mdeco\M|mosaic|inlay|listello|accent|motif|punch)'
+    or coalesce(o.series, '') || ' ' || coalesce(o.finish, '') ~* '(highlight|\mhl\M|decor|décor|\mdeco\M|mosaic|inlay|listello)');
+$$;
+grant execute on function public.highlighter_thumbs() to authenticated;
