@@ -68,7 +68,7 @@ def transport(brand, mm):
 def selling_price(net, unit, brand, mm):
     if net is None or unit != "sq ft":
         return None
-    return round((net + transport(brand, mm)) * 1.18 * 2, 2)
+    return round((net + transport(brand, mm)) * 1.18 * 2)   # whole rupees (Kirti, 2026-10-21)
 
 
 class Specs:

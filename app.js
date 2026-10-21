@@ -21,8 +21,8 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-function rupees(n) {
-  return n == null ? 'Price not in list' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+function rupees(n, decimals = 2) {
+  return n == null ? 'Price not in list' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: decimals });
 }
 
 // Pictures are in a private bucket, so each needs a short-lived signed link.
@@ -128,7 +128,7 @@ function offerHtml(o, cost) {
   return `<div class="offer">
     <h3>${esc(o.size)}${o.finish ? ' · ' + esc(o.finish) : ''}</h3>
     <div class="muted">Selling price</div>
-    <div class="price">${rupees(o.selling_price)} <span class="muted">${per}</span></div>
+    <div class="price">${rupees(o.selling_price == null ? null : Math.round(o.selling_price), 0)} <span class="muted">${per}</span></div>
     ${cost !== undefined ? `<div class="cost">Cost: ${rupees(cost)} ${per}</div>` : ''}
     <dl>
       ${o.packing ? `<dt>Packing</dt><dd>${esc(o.packing)}</dd>` : ''}
