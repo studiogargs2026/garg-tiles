@@ -96,7 +96,7 @@ def send_all(out):
         send(dest, open(os.path.join(out, dest), "rb").read())
         return dest
 
-    with ThreadPoolExecutor(8) as pool, open(sent_path, "a") as log:
+    with ThreadPoolExecutor(16) as pool, open(sent_path, "a") as log:
         for i, dest in enumerate(pool.map(one, todo), 1):
             log.write(dest + "\n")
             if i % 500 == 0 or i == len(todo):

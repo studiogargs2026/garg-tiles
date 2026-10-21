@@ -151,6 +151,16 @@ def main(tiles_path, work):
     designs = split_decors(json.load(open(tiles_path))["designs"])
     pictures = json.load(open(os.path.join(work, "pictures.json")))
     specs = Specs(designs, work)
+    # Price lists added later (kept with the data, never in this public repo): list_prices.json maps
+    # "brand|series" to {"price": net per sq ft, "mm": thickness, "kg": box weight, "note": ...}
+    extra = os.path.join(work, "list_prices.json")
+    list_prices = json.load(open(extra)) if os.path.exists(extra) else {}
+    for d in designs:
+        for o in d["offers"]:
+            lp = list_prices.get(f"{d['brand']}|{o.get('line')}")
+            if lp and o.get("basic") is None:
+                o.update(basic=lp["price"], disc=0, unit="sq ft", listMm=lp.get("mm"), listKg=lp.get("kg"),
+                         extra=" ".join(filter(None, [o.get("extra"), lp.get("note")])) or None)
     tally = Counter()
 
     # same brand + name twice: keep one tile with every size/finish
@@ -177,6 +187,7 @@ def main(tiles_path, work):
             for o in d["offers"]:
                 price, unit, note = net_cost(o)
                 mm, kg = specs.lookup(d, o.get("size"))
+                mm, kg = o.get("listMm") or mm, o.get("listKg") or kg
                 tally["thickness from catalog" if mm else "thickness assumed 9 mm"] += 1
                 if not mm and d["brand"] not in FIXED_TRANSPORT:
                     note = " ".join(filter(None, [note, "Thickness not in catalog, 9 mm assumed for selling price."]))
