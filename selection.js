@@ -1,6 +1,6 @@
-// Client selections: client details, areas, and the tiles chosen for each area (wall, floor,
-// highlighter...). From one selection the app makes the selection PDF (one slide per area with
-// the tile pictures) and the quotation PDF. Tile names can be shown as they are, shortened, or
+// Client selections and quotations: client details, areas, and the tiles chosen for each area
+// (wall, floor, highlighter...). A selection makes the selection PDF (one slide per area with the
+// tile pictures); a quotation makes the quotation PDF. Either can be copied into the other. Tile names can be shown as they are, shortened, or
 // replaced by a code, so the client does not get the exact name.
 views.push('selections-view', 'selection-view');
 
@@ -10,11 +10,20 @@ const AREA_NAMES = ['Master Washroom', 'Powder Washroom', 'Common Washroom', 'Ot
   'Living Room', 'Bedroom', 'Guest Room', 'Balcony', 'Staircase', 'All Floor'];
 const UNITS = ['Bag', 'Pcs', 'Box', 'Sqft', 'Set', 'Rft'];
 
-let sel = null;              // the selection being edited
+let sel = null;              // the selection or quotation being edited
+let listKind = 'selection';  // which list is open
 
-function blankSelection() {
-  return { id: null, quote_no: '', client: '', showroom, data: { address: '', phone: '', nameStyle: 'real', pictures: true, labour: '', notes: '', gst: 'in', gstRate: 18, areas: [] } };
+function blankSelection(kind) {
+  const s = { id: null, quote_no: '', client: '', showroom, data: { address: '', phone: '', nameStyle: 'real', pictures: true, labour: '', notes: '', gst: 'in', gstRate: 18, areas: [] } };
+  if (kind) s.data.kind = kind;
+  return s;
 }
+
+// 'selection' or 'quotation'; ones made before the two were apart count as quotations once numbered
+function kindOf(s) {
+  return (s?.data?.kind || s?.kind) || (s?.quote_no ? 'quotation' : 'selection');
+}
+const WORD = { selection: 'selection', quotation: 'quotation' };
 
 // ---------- names and sizes as printed ----------
 
@@ -95,18 +104,21 @@ function money(n) {
 
 // ---------- list of selections ----------
 
-async function openSelections() {
+async function openSelections(kind = listKind) {
+  listKind = kind;
   if (current === 'selection-view') leftSelection();
   show('selections-view');
   const draft = readDraft();
   const unsaved = draft?.sel && !draft.sel.id && (draft.sel.client || draft.sel.data?.areas?.length);
   $('sel-unsaved').hidden = !unsaved;
+  if (unsaved) $('sel-unsaved').textContent = `Continue unfinished ${WORD[kindOf(draft.sel)]}`;
   $('sel-list').innerHTML = '<li class="muted">Loading…</li>';
-  $('sel-title').textContent = isAdmin ? 'All selections and quotations' : 'My selections and quotations';
+  $('sel-title').textContent = `${isAdmin ? 'All' : 'My'} ${kind}s`;
+  $('sel-new').textContent = `+ New ${kind}`;
   $('sel-admin').hidden = !isAdmin;
   // the database only gives each person their own; admins get everyone's
   const [{ data, error }, people] = await Promise.all([
-    db.from('selections').select('id, client, quote_no, updated_at, showroom, created_by, total').order('updated_at', { ascending: false }).limit(1000),
+    db.from('selections').select('id, client, quote_no, updated_at, showroom, created_by, total, kind:data->>kind').order('updated_at', { ascending: false }).limit(1000),
     isAdmin ? staffNames() : {},
   ]);
   if (error) return ($('sel-list').innerHTML = '<li class="error">Could not load. Check your internet.</li>');
@@ -134,14 +146,14 @@ function fillPersonFilter() {
 function showSelectionList() {
   const room = isAdmin ? $('sel-f-room').value : '';
   const person = isAdmin ? $('sel-f-person').value : '';
-  const quotesOnly = isAdmin && $('sel-f-quotes').checked;
-  const rows = allSelections.filter((s) => (!room || roomOf(s) === room) && (!person || s.created_by === person) && (!quotesOnly || s.quote_no));
-  if (isAdmin) summary(rows);
+  const mine = allSelections.filter((s) => (!room || roomOf(s) === room) && (!person || s.created_by === person));
+  const rows = mine.filter((s) => kindOf(s) === listKind);
+  if (isAdmin) summary(mine);
   const tag = (s) => `<span class="room-tag ${roomOf(s)}">${SHOWROOMS[roomOf(s)].code}</span>`;
   $('sel-list').innerHTML = rows.length ? rows.map((s) => `<li class="card sel-row"><button data-sel="${s.id}">
       <span><b>${esc(s.client)}</b>${isAdmin ? tag(s) : ''}${isAdmin ? `<span class="who">by ${esc(staff[s.created_by] || 'Unknown')}</span>` : ''}</span>
-      <span class="muted">${s.quote_no ? 'Quote ' + esc(s.quote_no) + ' · ' : ''}${s.total ? '₹' + money(s.total) + ' · ' : ''}${new Date(s.updated_at).toLocaleDateString('en-IN')}</span>
-    </button></li>`).join('') : `<li class="muted">${allSelections.length ? 'Nothing matches these filters.' : 'No selections yet. Tap "New selection" to start one.'}</li>`;
+      <span class="muted">${s.quote_no ? 'Quote ' + esc(s.quote_no) + ' · ' : ''}${s.total && listKind === 'quotation' ? '₹' + money(s.total) + ' · ' : ''}${new Date(s.updated_at).toLocaleDateString('en-IN')}</span>
+    </button></li>`).join('') : `<li class="muted">${allSelections.some((s) => kindOf(s) === listKind) ? 'Nothing matches these filters.' : `No ${listKind}s yet. Tap "New ${listKind}" to start one.`}</li>`;
 }
 
 // admin: how many selections and quotations each person made, and the value quoted
@@ -150,8 +162,7 @@ function summary(rows) {
   for (const s of rows) {
     const k = s.created_by;
     by[k] ||= { sel: 0, quotes: 0, value: 0 };
-    by[k].sel++;
-    if (s.quote_no) { by[k].quotes++; by[k].value += Number(s.total) || 0; }
+    if (kindOf(s) === 'quotation') { by[k].quotes++; by[k].value += Number(s.total) || 0; } else by[k].sel++;
   }
   const all = Object.values(by).reduce((t, r) => ({ sel: t.sel + r.sel, quotes: t.quotes + r.quotes, value: t.value + r.value }), { sel: 0, quotes: 0, value: 0 });
   const line = (name, r, cls = '') => `<tr class="${cls}"><td>${esc(name)}</td><td>${r.sel}</td><td>${r.quotes}</td><td>₹${money(r.value)}</td></tr>`;
@@ -160,12 +171,13 @@ function summary(rows) {
     + (Object.keys(by).length > 1 ? line('Total', all, 'all') : '');
 }
 
-['sel-f-room', 'sel-f-person', 'sel-f-quotes'].forEach((id) => $(id).addEventListener('change', showSelectionList));
+['sel-f-room', 'sel-f-person'].forEach((id) => $(id).addEventListener('change', showSelectionList));
 
-$('nav-sel').addEventListener('click', openSelections);
+$('nav-sel').addEventListener('click', () => openSelections('selection'));
+$('nav-quote').addEventListener('click', () => openSelections('quotation'));
 $('sel-new').addEventListener('click', () => {
-  if (!$('sel-unsaved').hidden && !confirm('You have an unfinished selection that is not saved online. Start a new one anyway?')) return;
-  sel = blankSelection();
+  if (!$('sel-unsaved').hidden && !confirm(`You have an unfinished ${WORD[kindOf(readDraft()?.sel)]} that is not saved online. Start a new one anyway?`)) return;
+  sel = blankSelection(listKind);
   renderSelection();
   draftNote('');
   show('selection-view');
@@ -192,18 +204,25 @@ $('sel-list').addEventListener('click', async (e) => {
 
 function renderSelection() {
   const d = sel.data;
-  $('selection-view').querySelector('h1').textContent = `Client selection · ${SHOWROOMS[roomOf(sel)].name}`;
+  const quote = kindOf(sel) === 'quotation';
+  $('selection-view').querySelector('h1').textContent = `${quote ? 'Quotation' : 'Client selection'} · ${SHOWROOMS[roomOf(sel)].name}`;
+  // a selection is about the tiles; rates, labour, GST and terms belong to the quotation
+  $('selection-view').classList.toggle('is-selection', !quote);
+  ['sel-q-row', 'sel-total', 'q-card', 'sel-quote'].forEach((id) => ($(id).hidden = !quote));
+  $('sel-pdf').hidden = quote;
+  $('sel-convert').textContent = quote ? 'Make a selection' : 'Make a quotation';
+  $('sel-delete').textContent = `Delete this ${WORD[kindOf(sel)]}`;
   $('sel-code-eg').textContent = `${SHOWROOMS[roomOf(sel)].code}-4821`;
   $('sel-client').value = sel.client;
   $('sel-address').value = d.address || '';
   $('sel-phone').value = d.phone || '';
   $('sel-quote-no').value = sel.quote_no || '';
   $('sel-labour').value = d.labour || '';
-  $('sel-pictures').checked = d.pictures !== false;
   $('sel-notes').value = d.notes || '';
   $('sel-gst').value = d.gst || 'in';
   $('sel-gst-rate').value = d.gstRate || 18;
   $('sel-gst-rate-wrap').hidden = (d.gst || 'in') === 'in';
+  readyQuote().then(renderQuoteSettings).catch(() => {});
   document.querySelectorAll('[name=sel-names]').forEach((r) => (r.checked = r.value === (d.nameStyle || 'real')));
   $('sel-delete').hidden = !sel.id;
   $('sel-areas').innerHTML = d.areas.map((a, ai) => `
@@ -231,9 +250,9 @@ function itemHtml(it, ii) {
       <div class="qty-row">
         <label>Qty<input data-f="qty" type="number" inputmode="decimal" value="${esc(it.qty)}"></label>
         <label>Unit<select data-f="unit">${UNITS.map((u) => `<option${u === it.unit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
-        <label>Rate ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
+        <label class="q-only">Rate ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
       </div>
-      <div class="muted amount">Amount: ₹${money(amountOf(it))}</div>
+      <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
     </div>`;
   }
   const o = offerOf(it);
@@ -251,9 +270,9 @@ function itemHtml(it, ii) {
     <div class="qty-row">
       <label>Sq ft<input data-f="sqft" type="number" inputmode="decimal" value="${esc(it.sqft)}"></label>
       <label>Boxes<input data-f="boxes" type="number" inputmode="numeric" value="${esc(it.boxes)}"></label>
-      <label>Rate ₹/sq ft<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
+      <label class="q-only">Rate ₹/sq ft<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
     </div>
-    <div class="muted amount">${chargedBoxSqft(o) ? `${chargedBoxSqft(o)} sq ft per box (charged) · ` : ''}Amount: ₹${money(amountOf(it))}</div>
+    <div class="muted amount">${chargedBoxSqft(o) ? `${chargedBoxSqft(o)} sq ft per box (charged)` : ''}<span class="q-only">${chargedBoxSqft(o) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
   </div>`;
 }
 
@@ -335,11 +354,128 @@ $('sel-add-area').addEventListener('click', () => {
 [['sel-client', (v) => (sel.client = v)], ['sel-address', (v) => (sel.data.address = v)], ['sel-phone', (v) => (sel.data.phone = v)],
  ['sel-quote-no', (v) => (sel.quote_no = v)], ['sel-labour', (v) => { sel.data.labour = v; updateTotal(); }]]
   .forEach(([id, set]) => $(id).addEventListener('input', (e) => set(e.target.value)));
-$('sel-pictures').addEventListener('change', (e) => (sel.data.pictures = e.target.checked));
 $('sel-notes').addEventListener('input', (e) => (sel.data.notes = e.target.value));
 $('sel-gst').addEventListener('change', (e) => { sel.data.gst = e.target.value; $('sel-gst-rate-wrap').hidden = e.target.value === 'in'; });
 $('sel-gst-rate').addEventListener('input', (e) => (sel.data.gstRate = Number(e.target.value) || 18));
 document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener('change', () => { applyNameStyle(r.value); renderSelection(); }));
+
+// ---------- what the quotation shows ----------
+
+// Each quotation keeps its own choices in data.q: heading, columns, parts of the page, the lines
+// printed under the list (only ticked ones) and the terms. New quotations start from the
+// showroom's usual ones, which admins can change from any quotation.
+const Q_COLS = [['serial', 'Sr. no.'], ['pic', 'Tile picture'], ['size', 'Size'], ['finish', 'Finish'], ['role', 'Used as (wall, floor…)'],
+  ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['amount', 'Amount']];
+const Q_PARTS = [['dates', 'Date and valid until'], ['totals', 'Totals and grand total'], ['words', 'Amount in words'],
+  ['terms', 'Terms & conditions'], ['bank', 'Bank details'], ['thanks', 'Thank-you line'], ['brands', 'Brand logos strip']];
+const allOn = (list) => Object.fromEntries(list.map(([k]) => [k, true]));
+
+function usualQuote(biz) {
+  return {
+    title: biz.quote_title || 'QUOTATION',
+    validDays: biz.valid_days || 15,
+    cols: { ...allOn(Q_COLS), ...biz.quote_cols },
+    parts: { ...allOn(Q_PARTS), ...biz.quote_parts },
+    lines: (biz.lines || [{ text: biz.footer_note || 'Cartage charges will be extra', on: true }, { text: 'All rates include GST', on: false }])
+      .map((l) => ({ ...l })),
+    terms: [...(biz.terms || [])],
+  };
+}
+
+// fills data.q from the showroom's usual choices the first time a selection is opened
+async function readyQuote() {
+  const forSel = sel;
+  if (forSel.data.q?.terms) return;
+  const biz = await loadBusiness();
+  if (sel !== forSel) return;
+  const usual = usualQuote(biz);
+  const had = sel.data.q || {};
+  if (sel.data.pictures === false) usual.cols.pic = false;     // made before pictures became a column
+  sel.data.q = { ...usual, ...had, cols: { ...usual.cols, ...had.cols }, parts: { ...usual.parts, ...had.parts } };
+  keepLocal(current === 'selection-view' || pickArea !== null);
+}
+
+function renderQuoteSettings() {
+  const q = sel?.data.q;
+  if (!q) return;
+  const box = (group, [k, label]) => `<label class="choice"><input type="checkbox" data-${group}="${k}"${q[group === 'col' ? 'cols' : 'parts'][k] ? ' checked' : ''}> ${label}</label>`;
+  $('q-title').value = q.title;
+  $('q-valid').value = q.validDays;
+  $('q-valid-wrap').hidden = !q.parts.dates;
+  $('q-cols').innerHTML = Q_COLS.map((c) => box('col', c)).join('');
+  $('q-parts').innerHTML = Q_PARTS.filter(([k]) => k !== 'brands' || roomOf(sel) === 'gs').map((c) => box('part', c)).join('');
+  $('q-lines').innerHTML = q.lines.map((l, i) => `<div class="q-line${l.on ? '' : ' off'}" data-line="${i}">
+      <input type="checkbox" data-f="on"${l.on ? ' checked' : ''} aria-label="Print this line">
+      <input type="text" data-f="text" value="${esc(l.text)}" placeholder="e.g. Loading and unloading extra">
+      <button type="button" class="link danger" data-act="q-del-line">Remove</button>
+    </div>`).join('') || '<p class="muted">No lines.</p>';
+  $('q-terms').value = q.terms.join('\n');
+  $('q-default').hidden = !isAdmin;
+  $('q-default').textContent = `Make these the usual for every new ${SHOWROOMS[roomOf(sel)].name} quotation`;
+}
+
+$('q-card').addEventListener('input', (e) => {
+  const q = sel?.data.q;
+  if (!q) return;
+  const t = e.target, line = t.closest('[data-line]');
+  if (t.id === 'q-title') q.title = t.value;
+  else if (t.id === 'q-valid') q.validDays = Number(t.value) || '';
+  else if (t.id === 'q-terms') q.terms = t.value.split('\n');
+  else if (line && t.dataset.f === 'text') q.lines[line.dataset.line].text = t.value;
+});
+
+$('q-card').addEventListener('change', (e) => {
+  const q = sel?.data.q;
+  if (!q) return;
+  const t = e.target, line = t.closest('[data-line]');
+  if (t.dataset.col) {
+    q.cols[t.dataset.col] = t.checked;
+    if (t.dataset.col === 'pic') sel.data.pictures = t.checked;
+  } else if (t.dataset.part) {
+    q.parts[t.dataset.part] = t.checked;
+    $('q-valid-wrap').hidden = !q.parts.dates;
+  } else if (line && t.dataset.f === 'on') {
+    q.lines[line.dataset.line].on = t.checked;
+    line.classList.toggle('off', !t.checked);
+  }
+});
+
+$('q-card').addEventListener('click', async (e) => {
+  const act = e.target.dataset.act;
+  const q = sel?.data.q;
+  if (!act || !q) return;
+  if (act === 'q-add-line') {
+    q.lines.push({ text: '', on: true });
+    renderQuoteSettings();
+    const boxes = document.querySelectorAll('.q-line input[type=text]');
+    boxes[boxes.length - 1]?.focus();
+  } else if (act === 'q-del-line') {
+    q.lines.splice(Number(e.target.closest('[data-line]').dataset.line), 1);
+    renderQuoteSettings();
+  } else if (act === 'q-reset') {
+    if (!confirm("Put back the showroom's usual terms and lines? Your changes to them in this quotation will go.")) return;
+    const usual = usualQuote(await loadBusiness());
+    q.terms = usual.terms;
+    q.lines = usual.lines;
+    renderQuoteSettings();
+    changed();
+  } else if (act === 'q-default') saveUsualQuote();
+});
+
+// admins: this quotation's choices become the showroom's usual ones for new quotations
+async function saveUsualQuote() {
+  const room = SHOWROOMS[roomOf(sel)];
+  if (!confirm(`Every new ${room.name} quotation will start with these columns, terms and lines. Quotations already made stay as they are. Go ahead?`)) return;
+  const q = sel.data.q;
+  const { data, error: readError } = await db.from('app_settings').select('value').eq('key', room.settings).maybeSingle();
+  if (readError) return alert('Could not save. Check your internet and try again.');
+  const value = { ...(data?.value || businesses[room.settings] || {}), quote_title: q.title, valid_days: Number(q.validDays) || 15,
+    quote_cols: q.cols, quote_parts: q.parts, lines: q.lines.filter((l) => l.text.trim()), terms: q.terms.map((t) => t.trim()).filter(Boolean) };
+  const { error } = await db.from('app_settings').upsert({ key: room.settings, value });
+  if (error) return alert('Could not save. Only an admin can change the usual terms.');
+  businesses[room.settings] = value;
+  flash(`Saved as the usual for ${room.name}`);
+}
 
 // ---------- choosing a tile from the search screen ----------
 
@@ -393,7 +529,7 @@ window.startSelectionWith = async function (picks, areaName) {
     db.from('tiles').select('id, brand, name, image_path, thumb_path').in('id', ids),
     db.from('offers').select('tile_id, size, finish, packing, box_sqft, selling_price, unit').in('tile_id', ids).order('size'),
   ]);
-  sel = blankSelection();
+  sel = blankSelection('selection');
   const area = { name: areaName, items: [] };
   for (const p of picks) {
     const t = (tiles || []).find((x) => x.id === p.id);
@@ -486,7 +622,7 @@ window.resumeDraft = async function () {
   const d = readDraft();
   if (!d?.sel || !d.open) return;
   sel = { ...blankSelection(), ...d.sel, data: { ...blankSelection().data, ...d.sel.data } };
-  await openSelections();
+  await openSelections(kindOf(sel));
   renderSelection();
   show('selection-view');
   draftNote('Your unfinished selection was opened again.');
@@ -497,6 +633,21 @@ $('selection-view').addEventListener('change', changed);
 $('selection-view').addEventListener('click', (e) => { if (e.target.closest('[data-act], #sel-add-area')) changed(); });
 
 $('sel-save').addEventListener('click', () => saveSelection());
+
+// a copy of this selection as a quotation, or of this quotation as a selection; the original stays
+$('sel-convert').addEventListener('click', async () => {
+  const to = kindOf(sel) === 'quotation' ? 'selection' : 'quotation';
+  if (!sel.client.trim()) return alert("Please type the client's name first.");
+  if (!(await saveSelection(true))) return;
+  const from = kindOf(sel);
+  const copy = JSON.parse(JSON.stringify(sel));
+  sel = { ...copy, id: null, quote_no: '', data: { ...copy.data, kind: to } };
+  if (!(await saveSelection(true))) return;
+  listKind = to;
+  renderSelection();
+  window.scrollTo(0, 0);
+  draftNote(`Made from the ${from}. The ${from} is still saved as it was.`);
+});
 $('sel-delete').addEventListener('click', async () => {
   if (!confirm(`Delete the selection for ${sel.client}?`)) return;
   const { error } = await db.from('selections').delete().eq('id', sel.id);
@@ -806,32 +957,37 @@ function inWords(n) {
 async function quotationPdf() {
   const rows = sel.data.areas.filter((a) => a.items.length);
   if (!rows.length) return alert('Add at least one tile or item first.');
+  await readyQuote();
   if (!sel.quote_no) { sel.quote_no = await nextQuoteNo(); $('sel-quote-no').value = sel.quote_no; }
   if (!(await saveSelection(true))) return;
   busy(true);
   try {
     const biz = await loadBusiness();
-    const d = sel.data;
+    const d = sel.data, q = d.q, show = q.cols, part = q.parts;
     const doc = await startPdf({});
     const PW = 595, PH = 842, M = 32, R = PW - M, W = R - M, BOTTOM = PH - 48;
-    const pics = d.pictures !== false;
     // GST: 'in' = rates already include it, 'split' = show rates before GST and GST on its own line,
     // 'add' = add GST on top of the rates
     const gstMode = d.gst || 'in', gstRate = Number(d.gstRate) || 18;
     const shownRate = (r) => (gstMode === 'split' ? r / (1 + gstRate / 100) : r);
     const fmtDate = (t) => new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // columns: # | picture | description | boxes | quantity | rate | amount
-    const widths = [22, pics ? 50 : 0, 0, 46, 66, 66, 76];
-    widths[2] = W - widths.reduce((s, w) => s + w, 0);
-    const xs = widths.reduce((acc, w) => [...acc, acc[acc.length - 1] + w], [M]);
+    // the columns ticked for this quotation; the description takes the room the others leave
+    const cols = [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
+      ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['amount', 74, 'AMOUNT']]
+      .filter(([k]) => k === 'desc' || show[k]).map(([k, w, head]) => ({ k, w, head }));
+    cols.find((c) => c.k === 'desc').w = W - cols.reduce((s, c) => s + c.w, 0);
+    let cx = M;
+    for (const c of cols) { c.x = cx; cx += c.w; c.right = cx; }
+    const col = Object.fromEntries(cols.map((c) => [c.k, c]));
+    const pics = !!col.pic;
     let y = 0;
 
     // letterhead
     doc.setFillColor(...C.main); doc.rect(0, 0, PW, 122, 'F');
     doc.addImage(logoData, 'JPEG', M - 8, 10, 102 * LOGO_RATIO, 102);
     pen(doc, 'Playfair', 'bold', 26, C.accent);
-    doc.text('QUOTATION', R, 46, { align: 'right', charSpace: 1 });
+    doc.text((q.title || '').trim() || 'QUOTATION', R, 46, { align: 'right', charSpace: 1, maxWidth: W - 110 * LOGO_RATIO });
     pen(doc, 'Poppins', 'normal', 8, C.cream);
     [...(biz.address || []), biz.phone && `Phone: ${biz.phone}`, biz.email, biz.gstin && `GSTIN: ${biz.gstin}`]
       .filter(Boolean).forEach((t, i) => doc.text(t, R, 64 + i * 11, { align: 'right' }));
@@ -847,22 +1003,23 @@ async function quotationPdf() {
     if (d.address) { const a = doc.splitTextToSize(d.address, 300).slice(0, 3); doc.text(a, M, cy); cy += a.length * 11; }
     if (d.phone) { doc.text(`Phone: ${d.phone}`, M, cy); cy += 11; }
     const bx = R - 196;
-    doc.setFillColor(...C.cream); doc.roundedRect(bx, y - 14, 196, 64, 6, 6, 'F');
-    [['Quote No.', sel.quote_no], ['Date', fmtDate(Date.now())], ['Valid until', fmtDate(Date.now() + 15 * 864e5)]].forEach(([k, v], i) => {
+    const facts = [['Quote No.', sel.quote_no], ...(part.dates ? [['Date', fmtDate(Date.now())],
+      ...(Number(q.validDays) > 0 ? [['Valid until', fmtDate(Date.now() + Number(q.validDays) * 864e5)]] : [])] : [])];
+    doc.setFillColor(...C.cream); doc.roundedRect(bx, y - 14, 196, facts.length * 16 + 16, 6, 6, 'F');
+    facts.forEach(([k, v], i) => {
       pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(k, bx + 12, y + 3 + i * 16);
       pen(doc, 'Poppins', 'bold', 8.5, C.ink); doc.text(v, R - 12, y + 3 + i * 16, { align: 'right' });
     });
-    y = Math.max(cy, y + 56) + 16;
+    y = Math.max(cy, y + facts.length * 16 + 8) + 16;
 
     const tableHead = () => {
       doc.setFillColor(...C.main); doc.rect(M, y, W, 22, 'F');
       pen(doc, 'Poppins', 'bold', 7.5, C.cream);
-      const heads = ['#', pics ? 'TILE' : '', 'DESCRIPTION', 'BOXES', 'QUANTITY', gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE', 'AMOUNT'];
-      heads.forEach((h, i) => {
-        if (!h) return;
-        if (i >= 3) doc.text(h, xs[i + 1] - 6, y + 14.5, { align: 'right' });
-        else doc.text(h, xs[i] + (i === 0 ? 6 : 6), y + 14.5);
-      });
+      for (const c of cols) {
+        const h = c.k === 'pic' && !pics ? '' : c.head;
+        if (['boxes', 'qty', 'rate', 'amount'].includes(c.k)) doc.text(h, c.right - 6, y + 14.5, { align: 'right' });
+        else doc.text(h, c.x + 6, y + 14.5);
+      }
       y += 22;
     };
     const room = (h) => {
@@ -875,6 +1032,7 @@ async function quotationPdf() {
 
     let serial = 0, subtotal = 0, withGst = 0, n = 0;
     const count = rows.reduce((s, a) => s + a.items.length, 0);
+    const descW = col.desc.w - 12;
     for (const area of rows) {
       if (room(24 + 34)) tableHead();
       doc.setFillColor(...C.sand); doc.rect(M, y, W, 24, 'F');
@@ -884,6 +1042,7 @@ async function quotationPdf() {
       for (const it of area.items) {
         busy(true, `Making the quotation… ${++n} of ${count}`);
         const tile = it.kind === 'tile';
+        const o = tile ? offerOf(it) : {};
         const rate = Number(it.rate) || 0;
         const qty = tile ? Number(it.sqft) || 0 : Number(it.qty) || 0;
         const shown = Math.round(shownRate(rate) * 100) / 100;
@@ -891,71 +1050,84 @@ async function quotationPdf() {
         subtotal += amt;
         withGst += amountOf(it);
         pen(doc, 'Poppins', 'bold', 9, C.ink);
-        const name = doc.splitTextToSize(tile ? it.pdfName || it.name : it.desc || '', widths[2] - 12).slice(0, 2);
-        const detail = tile ? [tileDetails(it), it.role].filter(Boolean).join('  ·  ') : '';
+        const name = doc.splitTextToSize(tile ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
+        const detail = tile ? [show.finish && finishTag(o.finish) && o.finish, show.role && it.role].filter(Boolean).join('  ·  ') : '';
         pen(doc, 'Poppins', 'normal', 7.5, C.grey);
-        const det = detail ? doc.splitTextToSize(detail, widths[2] - 12).slice(0, 2) : [];
+        const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
+        const size = col.size && tile ? doc.splitTextToSize(sizeText(o), col.size.w - 10).slice(0, 3) : [];
         const textH = name.length * 11 + det.length * 9.5;
-        const h = Math.max(pics && tile ? 52 : 28, textH + 16);
+        const h = Math.max(pics && tile ? 52 : 28, textH + 16, size.length * 9.5 + 16);
         if (room(h)) tableHead();
         const mid = y + h / 2;
-        pen(doc, 'Poppins', 'normal', 8.5, C.grey);
-        doc.text(String(++serial), xs[0] + 6, mid + 3);
+        if (col.serial) { pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(String(++serial), col.serial.x + 6, mid + 3); }
         if (pics && tile) {
           const pic = await pictureData(it.thumb_path || it.image_path, { maxSide: 240, aspect: 1 });
-          if (pic) doc.addImage(pic.src, 'JPEG', xs[1] + 4, y + (h - 42) / 2, 42, 42);
+          if (pic) doc.addImage(pic.src, 'JPEG', col.pic.x + 4, y + (h - 42) / 2, 42, 42);
         }
         let ty = mid - textH / 2 + 8;
         pen(doc, 'Poppins', 'bold', 9, C.ink);
-        doc.text(name, xs[2] + 6, ty);
+        doc.text(name, col.desc.x + 6, ty);
         ty += name.length * 11;
         pen(doc, 'Poppins', 'normal', 7.5, C.grey);
-        if (det.length) doc.text(det, xs[2] + 6, ty - 1);
+        if (det.length) doc.text(det, col.desc.x + 6, ty - 1);
+        if (size.length) { pen(doc, 'Poppins', 'normal', 7.8, C.ink); doc.text(size, col.size.x + 6, mid - (size.length * 9.5) / 2 + 7); }
         pen(doc, 'Poppins', 'normal', 8.8, C.ink);
-        if (tile && it.boxes) doc.text(String(it.boxes), xs[4] - 6, mid + 3, { align: 'right' });
-        if (qty) doc.text(tile ? `${money(qty)} sq ft` : `${qty} ${it.unit || ''}`.trim(), xs[5] - 6, mid + 3, { align: 'right' });
-        if (rate) {
-          doc.text(rs(shown, shown % 1 ? 2 : 0), xs[6] - 6, mid + (tile ? 0 : 3), { align: 'right' });
-          if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', xs[6] - 6, mid + 9, { align: 'right' }); }
+        if (col.boxes && tile && it.boxes) doc.text(String(it.boxes), col.boxes.right - 6, mid + 3, { align: 'right' });
+        if (col.qty && qty) doc.text(tile ? `${money(qty)} sq ft` : `${qty} ${it.unit || ''}`.trim(), col.qty.right - 6, mid + 3, { align: 'right' });
+        if (col.rate && rate) {
+          doc.text(rs(shown, shown % 1 ? 2 : 0), col.rate.right - 6, mid + (tile ? 0 : 3), { align: 'right' });
+          if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', col.rate.right - 6, mid + 9, { align: 'right' }); }
         }
         pen(doc, 'Poppins', 'bold', 8.8, C.ink);
-        if (amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
+        if (col.amount && amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
         doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
         y += h;
       }
     }
-    if (biz.footer_note) {
-      room(22);
-      pen(doc, 'Poppins', 'normal', 8, C.accentDark);
-      doc.text(biz.footer_note, PW / 2, y + 15, { align: 'center', charSpace: 0.5 });
-      y += 22;
+
+    // the ticked lines, e.g. "Cartage charges will be extra"
+    for (const l of q.lines.filter((x) => x.on && x.text.trim())) {
+      pen(doc, 'Poppins', 'normal', 8.5, C.accentDark);
+      const t = doc.splitTextToSize(l.text.trim(), W - 40);
+      room(t.length * 11 + 8);
+      doc.text(t, PW / 2, y + 15, { align: 'center', charSpace: 0.3 });
+      y += t.length * 11 + 8;
     }
+    y += 4;
 
     // totals
     const labour = Number(d.labour) || 0;
     const gst = gstMode === 'split' ? withGst - subtotal : gstMode === 'add' ? Math.round(subtotal * gstRate / 100) : 0;
     const grand = subtotal + gst + labour;
-    const lines = [['Subtotal', subtotal], ...(gstMode !== 'in' ? [[`GST @ ${gstRate}%`, gst]] : []), ...(labour ? [['Labour charges', labour]] : [])];
-    room(lines.length * 20 + 70);
-    y += 16;
-    const tx = R - 220;
-    lines.forEach(([k, v]) => {
-      pen(doc, 'Poppins', 'normal', 9, C.grey); doc.text(k, tx + 10, y + 13);
-      pen(doc, 'Poppins', 'normal', 9, C.ink); doc.text(rs(v), R - 10, y + 13, { align: 'right' });
-      doc.setDrawColor(...C.line); doc.line(tx, y + 20, R, y + 20);
-      y += 20;
-    });
-    y += 4;
-    doc.setFillColor(...C.main); doc.roundedRect(tx, y, 220, 30, 4, 4, 'F');
-    pen(doc, 'Poppins', 'bold', 10.5, C.accent); doc.text('Grand Total', tx + 10, y + 19.5);
-    doc.text(rs(grand), R - 10, y + 19.5, { align: 'right' });
-    const wordsTop = y - lines.length * 20 - 4;
-    pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
-    doc.text('AMOUNT IN WORDS', M, wordsTop + 13, { charSpace: 1 });
-    pen(doc, 'Poppins', 'normal', 9, C.ink);
-    doc.text(doc.splitTextToSize(inWords(grand), tx - M - 24), M, wordsTop + 28);
-    if (gstMode === 'in') { pen(doc, 'Poppins', 'normal', 8, C.grey); doc.text('All rates include GST.', M, wordsTop + 56); }
-    y += 50;
+    const words = (top, width) => {
+      pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
+      doc.text('AMOUNT IN WORDS', M, top + 13, { charSpace: 1 });
+      pen(doc, 'Poppins', 'normal', 9, C.ink);
+      doc.text(doc.splitTextToSize(inWords(grand), width), M, top + 28);
+    };
+    if (part.totals) {
+      const lines = [['Subtotal', subtotal], ...(gstMode !== 'in' ? [[`GST @ ${gstRate}%`, gst]] : []), ...(labour ? [['Labour charges', labour]] : [])];
+      room(lines.length * 20 + 50);
+      y += 12;
+      const tx = R - 220;
+      const top = y;
+      lines.forEach(([k, v]) => {
+        pen(doc, 'Poppins', 'normal', 9, C.grey); doc.text(k, tx + 10, y + 13);
+        pen(doc, 'Poppins', 'normal', 9, C.ink); doc.text(rs(v), R - 10, y + 13, { align: 'right' });
+        doc.setDrawColor(...C.line); doc.line(tx, y + 20, R, y + 20);
+        y += 20;
+      });
+      y += 4;
+      doc.setFillColor(...C.main); doc.roundedRect(tx, y, 220, 30, 4, 4, 'F');
+      pen(doc, 'Poppins', 'bold', 10.5, C.accent); doc.text('Grand Total', tx + 10, y + 19.5);
+      doc.text(rs(grand), R - 10, y + 19.5, { align: 'right' });
+      if (part.words) words(top, tx - M - 24);
+      y += 50;
+    } else if (part.words) {
+      room(50);
+      words(y + 6, W);
+      y += 54;
+    } else y += 12;
 
     // notes, terms and bank details
     const box = (x, w, title, body) => {
@@ -976,20 +1148,30 @@ async function quotationPdf() {
       y += b.h + 12;
     }
     const bk = biz.bank || {};
-    const terms = box(M, 300, 'TERMS & CONDITIONS', (biz.terms || []).map((t, i) => `${i + 1}. ${t}`));
-    const bank = box(M + 312, W - 312, 'BANK DETAILS', [bk.title, bk.name && `Bank: ${bk.name}`, bk.account && `A/c No: ${bk.account}`,
-      bk.branch && `Branch: ${bk.branch}`, bk.ifsc && `IFSC: ${bk.ifsc}`, bk.upi && `UPI: ${bk.upi}`].filter(Boolean));
-    const h = Math.max(terms.h, bank.h);
-    room(h + 100);
-    terms.draw(y); bank.draw(y);
-    y += h + 26;
-    pen(doc, 'Playfair', 'bold', 13, C.main);
-    doc.text('Thank you for your business!', PW / 2, y, { align: 'center' });
-    pen(doc, 'Poppins', 'normal', 8, C.grey);
-    doc.text(`For any questions about this quotation, call ${biz.phone || ''}${biz.email ? ' or write to ' + biz.email : ''}.`, PW / 2, y + 15, { align: 'center' });
-    y += 30;
+    const termList = part.terms ? q.terms.map((t) => t.trim()).filter(Boolean) : [];
+    const bankList = part.bank ? [bk.title, bk.name && `Bank: ${bk.name}`, bk.account && `A/c No: ${bk.account}`,
+      bk.branch && `Branch: ${bk.branch}`, bk.ifsc && `IFSC: ${bk.ifsc}`, bk.upi && `UPI: ${bk.upi}`].filter(Boolean) : [];
+    const both = termList.length && bankList.length;
+    const blocks = [
+      termList.length && box(M, both ? 300 : W, 'TERMS & CONDITIONS', termList.map((t, i) => `${i + 1}. ${t}`)),
+      bankList.length && box(both ? M + 312 : M, both ? W - 312 : W, 'BANK DETAILS', bankList),
+    ].filter(Boolean);
+    if (blocks.length) {
+      const h = Math.max(...blocks.map((b) => b.h));
+      room(h + (part.thanks ? 60 : 10));
+      blocks.forEach((b) => b.draw(y));
+      y += h + 26;
+    }
+    if (part.thanks) {
+      room(40);
+      pen(doc, 'Playfair', 'bold', 13, C.main);
+      doc.text('Thank you for your business!', PW / 2, y, { align: 'center' });
+      pen(doc, 'Poppins', 'normal', 8, C.grey);
+      doc.text(`For any questions about this quotation, call ${biz.phone || ''}${biz.email ? ' or write to ' + biz.email : ''}.`, PW / 2, y + 15, { align: 'center' });
+      y += 30;
+    }
     // strip of the brands Garg's Studio sells; KP Enterprises gets its own when Kirti sends it
-    if (roomOf(sel) === 'gs') {
+    if (part.brands && roomOf(sel) === 'gs') {
       const stripH = W * 59 / 560;
       room(stripH);
       doc.addImage(await staticData('icons/brand-strip.jpg'), 'JPEG', M, Math.max(y, BOTTOM - stripH), W, stripH);

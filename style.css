@@ -62,12 +62,12 @@ select { display: block; width: 100%; margin-top: 4px; padding: 12px; font: inhe
 
 /* Back and Home always at the bottom of the screen, within thumb reach */
 main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
-.nav { position: fixed; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; gap: 10px;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--card);
+.nav { position: fixed; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; gap: 6px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--card);
   border-top: 1px solid var(--line); box-shadow: 0 -2px 12px rgba(240, 90, 40, .12); }
-.nav button { flex: 1; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg);
-  color: var(--accent); font-weight: 600; font-size: 1rem; }
-.nav button span { font-size: 1.2rem; }
+.nav button { flex: 1; min-width: 0; padding: 6px 2px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg);
+  color: var(--accent); font-weight: 600; font-size: .72rem; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.nav button span { font-size: 1.25rem; line-height: 1.1; }
 .nav button:disabled { color: var(--muted); opacity: .5; }
 
 /* client selections */
@@ -93,6 +93,17 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .choices { display: grid; gap: 6px; margin: 6px 0; }
 .choice { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: .95rem; margin: 4px 0; }
 .choice input { width: auto; margin: 0; accent-color: var(--accent); }
+.q-card summary { font-weight: 600; cursor: pointer; padding: 4px 0; }
+.q-card summary .muted { font-weight: 400; font-size: .85rem; }
+.q-card[open] summary { margin-bottom: 8px; }
+.q-card h4 { margin: 16px 0 2px; font-size: .95rem; }
+.choices.two { grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.q-line { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.q-line input[type=checkbox] { width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--accent); }
+.q-line input[type=text] { margin: 0; flex: 1; min-width: 0; }
+.q-line.off input[type=text] { color: var(--muted, #999); text-decoration: line-through; }
+.q-default { display: block; width: 100%; margin-top: 10px; }
+.is-selection .q-only { display: none; }
 .sel-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 14px 0 6px; }
 .sel-actions button { padding: 12px 6px; }
 .pick-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 14px;

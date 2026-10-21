@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Master View">
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <header class="bar">
@@ -79,8 +79,7 @@
           <select id="sel-f-room" aria-label="Showroom"><option value="">Both showrooms</option><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option></select>
           <select id="sel-f-person" aria-label="Employee"><option value="">Everyone</option></select>
         </div>
-        <label class="choice"><input type="checkbox" id="sel-f-quotes"> Only quotations</label>
-        <table id="sel-by-person" class="by-person"></table>
+                <table id="sel-by-person" class="by-person"></table>
       </div>
       <ul id="sel-list" class="plain sel-list"></ul>
     </section>
@@ -105,12 +104,24 @@
           <label class="choice"><input type="radio" name="sel-names" value="code"> Code (<span id="sel-code-eg">GS-4821</span>)</label>
         </div>
         <p class="muted">You can also change any name in its "Name in PDF" box.</p>
-        <label class="choice"><input type="checkbox" id="sel-pictures"> Show tile pictures in the quotation</label>
-        <div class="qty-row">
+        <div class="qty-row" id="sel-q-row">
           <label>Quote number<input id="sel-quote-no" placeholder="made automatically"></label>
           <label>Labour charges ₹<input id="sel-labour" type="number" inputmode="decimal"></label>
         </div>
-        <label>GST in the quotation
+        <label>Notes (printed in both PDFs)<textarea id="sel-notes" rows="3" placeholder="e.g. Skirting in the same tile. Delivery after 10 days."></textarea></label>
+        <p id="sel-total" class="price"></p>
+      </div>
+
+      <details id="q-card" class="card pad q-card">
+        <summary>What the quotation shows <span class="muted">columns, terms, lines</span></summary>
+        <label>Heading at the top<input id="q-title" placeholder="QUOTATION"></label>
+        <h4>Columns</h4>
+        <p class="muted">Untick a column to leave it out of the quotation.</p>
+        <div id="q-cols" class="choices two"></div>
+        <h4>Parts of the page</h4>
+        <div id="q-parts" class="choices two"></div>
+        <label id="q-valid-wrap">Quotation valid for (days)<input id="q-valid" type="number" inputmode="numeric"></label>
+        <label>GST in the rates
           <select id="sel-gst">
             <option value="in">Rates already include GST</option>
             <option value="split">Show GST separately (same total)</option>
@@ -118,18 +129,26 @@
           </select>
         </label>
         <label id="sel-gst-rate-wrap">GST %<input id="sel-gst-rate" type="number" inputmode="decimal" value="18"></label>
-        <label>Notes (printed in both PDFs)<textarea id="sel-notes" rows="3" placeholder="e.g. Skirting in the same tile. Delivery after 10 days."></textarea></label>
-        <p id="sel-total" class="price"></p>
-      </div>
+        <h4>Lines under the list</h4>
+        <p class="muted">Only ticked lines are printed. Tap the words to change them.</p>
+        <div id="q-lines"></div>
+        <button type="button" class="ghost small" data-act="q-add-line">+ Add a line</button>
+        <h4>Terms &amp; conditions</h4>
+        <p class="muted">Write one term on each line. They are numbered in the PDF.</p>
+        <textarea id="q-terms" rows="5"></textarea>
+        <button type="button" class="link" data-act="q-reset">Go back to the showroom's usual terms and lines</button>
+        <button type="button" class="ghost small q-default" data-act="q-default" id="q-default" hidden>Make these the usual for every new quotation</button>
+      </details>
 
       <div class="sel-actions">
         <button id="sel-save" type="button" class="ghost">Save</button>
         <button id="sel-pdf" type="button" class="primary">Selection PDF</button>
         <button id="sel-quote" type="button" class="primary">Quotation PDF</button>
+        <button id="sel-convert" type="button" class="ghost">Make a quotation</button>
       </div>
       <p id="sel-msg" class="muted"></p>
-      <button id="sel-delete" type="button" class="link danger" hidden>Delete this selection</button>
-      <p class="muted version">App version 16</p>
+      <button id="sel-delete" type="button" class="link danger" hidden>Delete</button>
+      <p class="muted version">App version 18</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -185,13 +204,14 @@
     <button id="nav-home" type="button"><span aria-hidden="true">⌂</span> Home</button>
     <button id="nav-photo" type="button"><span aria-hidden="true">◉</span> Photo</button>
     <button id="nav-sel" type="button"><span aria-hidden="true">☰</span> Selections</button>
+    <button id="nav-quote" type="button"><span aria-hidden="true">₹</span> Quotes</button>
   </nav>
 
   <script src="vendor/supabase.js"></script>
-  <script src="config.js?v=16"></script>
-  <script src="app.js?v=16"></script>
+  <script src="config.js?v=18"></script>
+  <script src="app.js?v=18"></script>
   <script src="vendor/jspdf.umd.min.js" defer></script>
-  <script src="selection.js?v=16"></script>
-  <script src="photo.js?v=16"></script>
+  <script src="selection.js?v=18"></script>
+  <script src="photo.js?v=18"></script>
 </body>
 </html>
