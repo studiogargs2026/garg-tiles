@@ -96,7 +96,7 @@ function forgetShowroom() {
   showroom = null;
   try { localStorage.removeItem(SHOWROOM_KEY); } catch { /* private mode */ }
   delete document.body.dataset.showroom;
-  $('brand-name').textContent = 'Garg Tiles';
+  $('brand-name').textContent = 'Master View';
   $('brand-logo').hidden = true;
 }
 
