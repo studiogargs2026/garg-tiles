@@ -38,6 +38,7 @@ async function startSession(session) {
   $('admin').hidden = true;
   if (!session) return show('login-view');
   show('search-view');      // never wait on the network before showing the app
+  loadFilters();
   const { data } = await db.rpc('is_admin');
   isAdmin = data === true;
   $('admin').hidden = !isAdmin;
@@ -76,24 +77,99 @@ $('login-form').addEventListener('submit', async (e) => {
 
 $('logout').addEventListener('click', () => db.auth.signOut());
 
-$('search-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const words = $('q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return;
+// Size values like "60x120" (cm, as stored) are shown in mm the way staff say them: 600x1200 mm
+function sizeLabel(s) {
+  return s.split('x').map((v) => Math.round(Number(v) * 10)).join('x') + ' mm';
+}
+
+function filters() {
+  return { p_brand: $('f-brand').value || null, p_size: $('f-size').value || null };
+}
+
+async function loadFilters() {
+  if ($('f-brand').options.length > 1) return;
+  const { data } = await db.rpc('tile_filters');
+  if (!data) return;
+  $('f-brand').insertAdjacentHTML('beforeend', (data.brands || []).map((b) => `<option>${esc(b)}</option>`).join(''));
+  $('f-size').insertAdjacentHTML('beforeend', (data.sizes || []).map((s) => `<option value="${esc(s)}">${sizeLabel(s)}</option>`).join(''));
+}
+
+const PAGE = 40;
+let shownQuery = '';
+
+async function runSearch(more = false) {
+  hideSuggest();
+  const q = $('q').value.trim();
+  const f = filters();
+  if (!more && !q && !f.p_brand && !f.p_size) {
+    $('status').textContent = '';
+    $('results').innerHTML = '';
+    $('more').hidden = true;
+    lastResults = [];
+    return;
+  }
+  if (!more) { shownQuery = q; lastResults = []; $('results').innerHTML = ''; }
   $('status').textContent = 'Searching…';
-  let query = db.from('tiles').select('id, brand, name, catalog, thumb_path').order('name').limit(60);
-  words.forEach((w) => (query = query.ilike('search_text', `%${w}%`)));
-  const { data, error } = await query;
+  $('more').hidden = true;
+  const { data, error } = await db.rpc('browse_tiles', { q: shownQuery, ...f, p_offset: lastResults.length, p_limit: PAGE });
   if (error) return ($('status').textContent = 'Could not search. Check your internet and try again.');
-  lastResults = data;
-  $('status').textContent = data.length ? `${data.length} tile${data.length > 1 ? 's' : ''} found` : 'No tiles found. Try fewer words.';
+  lastResults = lastResults.concat(data);
+  const n = lastResults.length;
+  $('status').textContent = n ? `${n}${data.length === PAGE ? '+' : ''} tile${n > 1 ? 's' : ''}` : 'No tiles found. Try fewer words or change the filters.';
+  $('more').hidden = data.length < PAGE;
   const urls = await signedUrls(data.map((t) => t.thumb_path));
-  $('results').innerHTML = data.map((t) => `
+  $('results').insertAdjacentHTML('beforeend', data.map((t) => `
     <li class="card"><button data-id="${t.id}">
       ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="" loading="lazy">` : '<div class="thumb-empty"></div>'}
       <div class="info"><div class="name">${esc(t.name)}</div><div class="muted">${esc(t.brand)}</div></div>
-    </button></li>`).join('');
+    </button></li>`).join(''));
+}
+
+$('search-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  $('q').blur();
+  runSearch();
 });
+$('more').addEventListener('click', () => runSearch(true));
+['f-brand', 'f-size'].forEach((id) => $(id).addEventListener('change', () => {
+  $(id).classList.toggle('on', !!$(id).value);
+  runSearch();
+}));
+
+// Suggestions while typing; only the newest answer is shown when typing fast.
+let suggestTimer = null;
+let suggestTurn = 0;
+function hideSuggest() { $('suggest').hidden = true; suggestTurn++; }
+
+$('q').addEventListener('input', () => {
+  clearTimeout(suggestTimer);
+  const q = $('q').value.trim();
+  if (!q) { hideSuggest(); if (!filters().p_brand && !filters().p_size) runSearch(); return; }
+  suggestTimer = setTimeout(async () => {
+    const turn = ++suggestTurn;
+    const { data } = await db.rpc('suggest_tiles', { q, ...filters() });
+    if (turn !== suggestTurn) return;
+    if (!data?.length) return ($('suggest').hidden = true);
+    const urls = await signedUrls(data.map((t) => t.thumb_path));
+    if (turn !== suggestTurn) return;
+    $('suggest').innerHTML = data.map((t) => `<li><button type="button" data-id="${t.id}">
+      ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
+      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}</span></span></button></li>`).join('');
+    $('suggest').hidden = false;
+  }, 200);
+});
+
+$('suggest').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-id]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const name = btn.querySelector('b').textContent;
+  hideSuggest();
+  $('q').value = name;
+  openTile(id);
+});
+
+document.addEventListener('click', (e) => { if (!e.target.closest('.suggest-wrap')) hideSuggest(); });
 
 $('results').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-id]');
@@ -103,7 +179,6 @@ $('results').addEventListener('click', (e) => {
 $('back').addEventListener('click', () => show('search-view'));
 
 async function openTile(id) {
-  const tile = lastResults.find((t) => t.id === id);
   $('tile').innerHTML = '<p class="muted">Loading…</p>';
   show('tile-view');
   const [{ data: full }, { data: offers }] = await Promise.all([
@@ -120,7 +195,6 @@ async function openTile(id) {
     ${(offers || []).map((o) => offerHtml(o, costs?.[o.id])).join('') || '<p>No sizes listed yet.</p>'}
     ${!costs && offers?.length ? '<button id="show-cost" class="link">Show cost price</button><p id="cost-error" class="error" hidden></p>' : ''}
     ${full.notes ? `<p class="muted">${esc(full.notes)}</p>` : ''}`;
-  if (!tile) lastResults.push(full);
 }
 
 function offerHtml(o, cost) {

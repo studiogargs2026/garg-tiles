@@ -38,11 +38,19 @@
 
     <section id="search-view" hidden>
       <form id="search-form" class="search">
-        <input id="q" type="search" placeholder="Tile name, e.g. Statuario" autocomplete="off" enterkeyhint="search">
+        <div class="suggest-wrap">
+          <input id="q" type="search" placeholder="Tile name, e.g. Statuario" autocomplete="off" enterkeyhint="search">
+          <ul id="suggest" class="suggest" hidden></ul>
+        </div>
         <button type="submit" class="primary">Search</button>
       </form>
+      <div class="filters">
+        <select id="f-brand" aria-label="Brand"><option value="">All brands</option></select>
+        <select id="f-size" aria-label="Size"><option value="">All sizes</option></select>
+      </div>
       <p id="status" class="muted"></p>
       <ul id="results" class="grid"></ul>
+      <button id="more" class="primary more" hidden>Show more tiles</button>
     </section>
 
     <section id="tile-view" hidden>

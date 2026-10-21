@@ -190,3 +190,47 @@ alter policy "staff read tiles" on public.tiles using (public.is_staff());
 alter policy "staff read offers" on public.offers using (public.is_staff());
 create policy "staff read tile pictures only while listed" on storage.objects as restrictive for select to authenticated
   using (bucket_id <> 'tiles' or public.is_staff());
+
+-- Search screen: brand and size filters, suggestions while typing (2026-10-21)
+create or replace function public.base_size(s text) returns text language sql immutable as $$
+  select case when m is null then null else
+    (select string_agg(case when abs(v::numeric - round(v::numeric)) <= 0.3 then round(v::numeric)::text else v end, 'x' order by i)
+       from unnest(m) with ordinality as u(v, i)) end
+  from (select regexp_match(s, '^([0-9.]+)x([0-9.]+) cm') m) x
+$$;
+create index if not exists offers_base_size on public.offers (public.base_size(size));
+create index if not exists offers_tile on public.offers (tile_id);
+
+create or replace function public.tile_filters() returns jsonb language sql stable security invoker set search_path = public as $$
+  select jsonb_build_object(
+    'brands', (select jsonb_agg(brand order by brand) from (select distinct brand from tiles) b),
+    'sizes', (select jsonb_agg(s order by split_part(s,'x',1)::numeric * split_part(s,'x',2)::numeric, s)
+              from (select base_size(size) s from offers where base_size(size) is not null group by 1 having count(distinct tile_id) >= 3) z))
+$$;
+
+create or replace function public.suggest_tiles(q text, p_brand text default null, p_size text default null)
+returns table (id bigint, brand text, name text, thumb_path text) language sql stable security invoker set search_path = public as $$
+  select t.id, t.brand, t.name, t.thumb_path from tiles t
+  where (p_brand is null or t.brand = p_brand)
+    and (p_size is null or exists (select 1 from offers o where o.tile_id = t.id and base_size(o.size) = p_size))
+    and trim(coalesce(q,'')) <> ''
+    and not exists (select 1 from regexp_split_to_table(lower(trim(q)), '\s+') w
+                    where lower(t.brand || ' ' || t.name) not like '%' || w || '%')
+  order by lower(t.name) like lower(trim(q)) || '%' desc, length(t.name), t.name
+  limit 8
+$$;
+
+create or replace function public.browse_tiles(q text default '', p_brand text default null, p_size text default null,
+    p_offset int default 0, p_limit int default 40)
+returns table (id bigint, brand text, name text, catalog text, thumb_path text) language sql stable security invoker set search_path = public as $$
+  select t.id, t.brand, t.name, t.catalog, t.thumb_path from tiles t
+  where (p_brand is null or t.brand = p_brand)
+    and (p_size is null or exists (select 1 from offers o where o.tile_id = t.id and base_size(o.size) = p_size))
+    and not exists (select 1 from regexp_split_to_table(lower(trim(coalesce(q,''))), '\s+') w
+                    where w <> '' and t.search_text not like '%' || w || '%')
+  order by (lower(t.name) like '%' || lower(trim(coalesce(q,''))) || '%') desc, t.name, t.brand
+  offset greatest(p_offset,0) limit least(greatest(p_limit,1),100)
+$$;
+revoke execute on function public.tile_filters() from anon;
+revoke execute on function public.suggest_tiles(text,text,text) from anon;
+revoke execute on function public.browse_tiles(text,text,text,int,int) from anon;
