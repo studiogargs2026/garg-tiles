@@ -69,3 +69,31 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
   color: var(--accent); font-weight: 600; font-size: 1rem; }
 .nav button span { font-size: 1.2rem; }
 .nav button:disabled { color: var(--muted); opacity: .5; }
+
+/* client selections */
+.pad { padding: 12px 14px; margin: 12px 0; }
+.ghost { padding: 12px 18px; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--card); color: var(--accent); font-weight: 600; }
+.small { padding: 8px 12px; font-size: .9rem; }
+.danger { color: var(--error) !important; }
+.sel-list { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; }
+.sel-row button { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; padding: 14px; border: 0; background: none; color: inherit; text-align: left; }
+.area { padding: 12px; margin: 12px 0; }
+.area-head { display: flex; gap: 8px; align-items: center; }
+.area-head input { margin: 0; font-weight: 600; }
+.area-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.item { border-top: 1px solid var(--line); padding: 10px 0; }
+.item-top { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+.item-top .grow { flex: 1; min-width: 0; }
+.sel-thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: var(--line); flex: none; }
+.qty-row { display: flex; gap: 8px; }
+.qty-row label { flex: 1; min-width: 0; margin-bottom: 8px; }
+.qty-row label.wide { flex: 2; }
+.qty-row select, .item select { width: 100%; margin-top: 4px; }
+.amount { margin-top: -2px; }
+.choices { display: grid; gap: 6px; margin: 6px 0; }
+.choice { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: .95rem; margin: 4px 0; }
+.choice input { width: auto; margin: 0; accent-color: var(--accent); }
+.sel-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 14px 0 6px; }
+.sel-actions button { padding: 12px 6px; }
+.pick-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 14px;
+  border-radius: 12px; background: #fff1e8; border: 1.5px solid var(--accent); font-weight: 600; }

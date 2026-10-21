@@ -37,6 +37,10 @@
     </section>
 
     <section id="search-view" hidden>
+      <div id="pick-banner" class="pick-banner" hidden>
+        <span id="pick-text"></span>
+        <button id="pick-cancel" type="button" class="link">Cancel</button>
+      </div>
       <form id="search-form" class="search">
         <div class="suggest-wrap">
           <input id="q" type="search" placeholder="Tile name, e.g. Statuario" autocomplete="off" enterkeyhint="search">
@@ -57,6 +61,48 @@
       <button id="back" class="link">‹ Back</button>
       <div id="tile"></div>
     </section>
+    <section id="selections-view" hidden>
+      <h1>Client selections</h1>
+      <button id="sel-new" type="button" class="primary">+ New selection</button>
+      <ul id="sel-list" class="plain sel-list"></ul>
+    </section>
+
+    <section id="selection-view" hidden>
+      <h1>Client selection</h1>
+      <div class="card pad">
+        <label>Client name <input id="sel-client" placeholder="e.g. Rocky Singh Ji" autocomplete="off"></label>
+        <label>Address (for quotation) <input id="sel-address" autocomplete="off"></label>
+        <label>Phone (for quotation) <input id="sel-phone" type="tel" autocomplete="off"></label>
+      </div>
+      <datalist id="area-names"></datalist>
+      <div id="sel-areas"></div>
+      <button id="sel-add-area" type="button" class="ghost">+ Add area</button>
+
+      <div class="card pad">
+        <h3>Tile names in the PDFs</h3>
+        <div class="choices">
+          <label class="choice"><input type="radio" name="sel-names" value="real"> Real name</label>
+          <label class="choice"><input type="radio" name="sel-names" value="short"> Short form (A.T.E.)</label>
+          <label class="choice"><input type="radio" name="sel-names" value="code"> Code (GS-4821)</label>
+        </div>
+        <p class="muted">You can also change any name in its "Name in PDF" box.</p>
+        <label class="choice"><input type="checkbox" id="sel-pictures"> Show tile pictures in the quotation</label>
+        <div class="qty-row">
+          <label>Quote number<input id="sel-quote-no" placeholder="made automatically"></label>
+          <label>Labour charges ₹<input id="sel-labour" type="number" inputmode="decimal"></label>
+        </div>
+        <p id="sel-total" class="price"></p>
+      </div>
+
+      <div class="sel-actions">
+        <button id="sel-save" type="button" class="ghost">Save</button>
+        <button id="sel-pdf" type="button" class="primary">Selection PDF</button>
+        <button id="sel-quote" type="button" class="primary">Quotation PDF</button>
+      </div>
+      <p id="sel-msg" class="muted"></p>
+      <button id="sel-delete" type="button" class="link danger" hidden>Delete this selection</button>
+    </section>
+
     <section id="admin-view" hidden>
       <button id="admin-back" class="link">‹ Back</button>
       <h1>Admin</h1>
@@ -88,10 +134,13 @@
   <nav id="nav" class="nav" hidden>
     <button id="nav-back" type="button"><span aria-hidden="true">‹</span> Back</button>
     <button id="nav-home" type="button"><span aria-hidden="true">⌂</span> Home</button>
+    <button id="nav-sel" type="button"><span aria-hidden="true">☰</span> Selections</button>
   </nav>
 
   <script src="vendor/supabase.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script src="vendor/jspdf.umd.min.js" defer></script>
+  <script src="selection.js"></script>
 </body>
 </html>

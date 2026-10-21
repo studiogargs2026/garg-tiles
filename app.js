@@ -202,17 +202,23 @@ $('suggest').addEventListener('click', (e) => {
   const name = btn.querySelector('b').textContent;
   hideSuggest();
   $('q').value = name;
-  openTile(id);
+  pickOrOpen(id);
 });
 
 document.addEventListener('click', (e) => { if (!e.target.closest('.suggest-wrap')) hideSuggest(); });
 
 $('results').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-id]');
-  if (btn) openTile(Number(btn.dataset.id));
+  if (btn) pickOrOpen(Number(btn.dataset.id));
 });
 
 $('back').addEventListener('click', goBack);
+
+// While a client selection is choosing a tile, a tap adds the tile there instead of opening it
+async function pickOrOpen(id) {
+  if (window.pickTile && (await window.pickTile(id))) return;
+  openTile(id);
+}
 
 async function openTile(id) {
   $('tile').innerHTML = '<p class="muted">Loading…</p>';
@@ -233,6 +239,18 @@ async function openTile(id) {
     ${full.notes ? `<p class="muted">${esc(full.notes)}</p>` : ''}`;
 }
 
+// Clients are charged by the rounded size in inches (600x1200 = 24"x48" = 8 sq ft a piece, so a
+// 2-piece box is 16 sq ft, not the actual 15.5); Kirti, 2026-10-21
+function chargedBoxSqft(o) {
+  const m = /([\d.]+)x([\d.]+)/.exec(o.size || '');
+  if (!m) return null;
+  const inch = (cm) => Math.round(Number(cm) / 2.5 * 2) / 2;
+  const piece = (inch(m[1]) * inch(m[2])) / 144;
+  let pcs = Number((/(\d+)\s*pcs?\b/i.exec(o.packing || '') || [])[1]);
+  if (!pcs && o.box_sqft) pcs = Math.round(Number(o.box_sqft) / (Number(m[1]) * Number(m[2]) / 929.03));
+  return pcs ? Math.round(pcs * piece * 100) / 100 : null;
+}
+
 function offerHtml(o, cost) {
   const per = o.unit === 'box' ? 'per box' : 'per sq ft';
   return `<div class="offer">
@@ -242,6 +260,7 @@ function offerHtml(o, cost) {
     ${cost !== undefined ? `<div class="cost">Cost: ${rupees(cost)} ${per}</div>` : ''}
     <dl>
       ${o.packing ? `<dt>Packing</dt><dd>${esc(o.packing)}</dd>` : ''}
+      ${chargedBoxSqft(o) ? `<dt>Charged</dt><dd>${chargedBoxSqft(o)} sq ft per box</dd>` : ''}
       ${o.thickness_mm ? `<dt>Thickness</dt><dd>${esc(o.thickness_mm)} mm</dd>` : ''}
       ${o.weight_kg ? `<dt>Weight</dt><dd>${esc(o.weight_kg)} kg per box</dd>` : ''}
       ${o.series ? `<dt>Series</dt><dd>${esc(o.series)}</dd>` : ''}

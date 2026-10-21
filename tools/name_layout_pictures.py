@@ -13,6 +13,7 @@ import re
 import sys
 from collections import defaultdict
 
+import cv2
 import numpy as np
 import pymupdf
 
@@ -38,6 +39,12 @@ def ratios(design):
             if a and b:
                 out.add(max(a, b) / min(a, b))
     return out
+
+
+def blank(img):
+    """A plain white or one-colour picture (page background, empty frame) is not a tile face."""
+    grey = cv2.cvtColor(cv2.resize(img, (64, 64), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+    return float(grey[8:56, 8:56].std()) < 1.0      # the middle is one flat colour
 
 
 FINISH_WORDS = {"matt", "endless", "glossy", "polished", "carving", "lapato", "gloss", "satin", "rustic"}
@@ -95,18 +102,24 @@ def main(old_dir, tiles_path, work):
                 text = " " + norm(b[4]) + " "
                 for name in wanted:
                     if " " + name + " " in text:
-                        seen[name].append((folder, p.number + 1, (b[0], b[2])))
+                        seen[name].append((folder, p.number + 1, tuple(b[:4]), text.strip() == name))
     print(f"{len(todo)} tiles left, {sum(1 for n in wanted if seen[n])} names found on a page", flush=True)
 
     found = 0
     for name, keys in wanted.items():
-        spots = seen[name]
-        if not spots or len({(f, p) for f, p, _ in spots}) > MAX_PAGES:
-            continue
         for k in keys:
             d = designs[k]
+            # a common name ("Calacatta") is still usable on the brand's own catalog pages,
+            # best where the name stands alone as the tile's label
+            brand_word = norm(d["brand"]).split()[0]
+            own = [s for s in seen[name] if brand_word in s[0]]
+            exact = [s for s in own if s[3]]
+            spots = next((group for group, most in ((exact, 2 * MAX_PAGES), (own, MAX_PAGES), (seen[name], MAX_PAGES))
+                          if group and len({(s[0], s[1]) for s in group}) <= most), None)
+            if not spots:
+                continue
             cands = []
-            for folder, page, (tx0, tx1) in spots:
+            for folder, page, (tx0, ty0, tx1, ty1), _ in spots:
                 for img in images[(folder, page)]:
                     w, h = img["w"], img["h"]
                     if min(w, h) < 250:
@@ -114,14 +127,15 @@ def main(old_dir, tiles_path, work):
                     r = max(w, h) / min(w, h)
                     if not any(abs(r / want - 1) < 0.08 for want in ratios(d)):
                         continue
-                    x0, _, x1, _ = img["bbox"]
-                    cands.append(((min(tx1, x1) - max(tx0, x0) > 0, w * h), img))
-            # best first: under the name, then biggest; the first one close in colour wins
+                    x0, y0, x1, y1 = img["bbox"]
+                    gap = max(0, y0 - ty1, ty0 - y1)       # how far the picture is from the name, up or down
+                    cands.append(((min(tx1, x1) - max(tx0, x0) > 0, -round(gap / 20), w * h), img))
+            # best first: in line with the name, nearest to it, then biggest; the first close in colour wins
             small = read(old[k]) if k in old else None
             img = pic = None
             for _, c in sorted(cands, key=lambda c: c[0], reverse=True)[:6]:
                 p = read(os.path.join(work, "pics", c["path"]))
-                if p is None:
+                if p is None or (blank(p) and not (small is not None and blank(small))):
                     continue
                 if small is None or float(np.linalg.norm(mean_lab(small) - mean_lab(p))) <= MAX_COLOUR:
                     img, pic = c, p
@@ -133,6 +147,10 @@ def main(old_dir, tiles_path, work):
                           "file": file, "px": save_pair(pic, file, out)}
             found += 1
     drop_shared(matches)
+    for k in [k for k, v in matches.items() if v["how"] in ("name", "decor")]:
+        img, small = read(os.path.join(out, matches[k]["file"])), read(old[k]) if k in old else None
+        if img is None or (blank(img) and small is not None and not blank(small)):
+            del matches[k]
     json.dump(matches, open(os.path.join(out, "matches.json"), "w"), indent=0)
     print(f"done: {found} more tiles found, {len(matches)} tiles have sharp pictures", flush=True)
 
