@@ -225,16 +225,18 @@ function renderSelection() {
   readyQuote().then(renderQuoteSettings).catch(() => {});
   document.querySelectorAll('[name=sel-names]').forEach((r) => (r.checked = r.value === (d.nameStyle || 'real')));
   $('sel-delete').hidden = !sel.id;
+  showTarget();
   $('sel-areas').innerHTML = d.areas.map((a, ai) => `
-    <div class="area card" data-area="${ai}">
+    <div class="area card${ai === target ? ' target' : ''}" data-area="${ai}">
       <div class="area-head">
         <input class="area-name" list="area-names" value="${esc(a.name)}" placeholder="Area, e.g. Master Washroom" data-f="area-name">
         <button type="button" class="link danger" data-act="del-area">Remove</button>
       </div>
-      ${a.items.map((it, ii) => itemHtml(it, ii)).join('') || '<p class="muted">No tiles yet.</p>'}
+      <label class="choice add-here"><input type="radio" name="add-here" data-act="target"${ai === target ? ' checked' : ''}> Add products here</label>
+      ${a.items.map((it, ii) => itemHtml(it, ii)).join('') || '<p class="muted">No products yet.</p>'}
       <div class="area-actions">
-        <button type="button" class="primary small" data-act="add-tile">+ Add tile</button>
-        <button type="button" class="ghost small" data-act="add-other">+ Other item</button>
+        <button type="button" class="primary small" data-act="add-tile">+ Add product</button>
+        <button type="button" class="ghost small" data-act="add-other">+ Product not in the app</button>
       </div>
     </div>`).join('') || '<p class="muted">Add the first area, like "Master Washroom".</p>';
   refreshThumbs();
@@ -245,8 +247,16 @@ function renderSelection() {
 function itemHtml(it, ii) {
   if (it.kind === 'other') {
     return `<div class="item other" data-item="${ii}">
-      <div class="item-top"><b>Other item</b><button type="button" class="link danger" data-act="del-item">Remove</button></div>
-      <input data-f="desc" value="${esc(it.desc)}" placeholder="Description, e.g. Dimond Star (50kg)">
+      <div class="item-top">
+        <label class="sel-thumb own-photo">${it.photo ? `<img src="${it.photo}" alt="">` : '<span>+ Photo</span>'}<input type="file" accept="image/*" data-f="photo" hidden></label>
+        <div class="grow"><b>Product not in the app</b><div class="muted">${it.photo ? 'Tap the picture to change it' : 'Tap "+ Photo" to add a picture'}</div></div>
+        <button type="button" class="link danger" data-act="del-item">Remove</button>
+      </div>
+      <label>Name<input data-f="desc" value="${esc(it.desc)}" placeholder="e.g. Dimond Star (50kg) or Wash basin"></label>
+      <div class="qty-row">
+        <label>Used as<select data-f="role">${ROLES.map((r) => `<option${r === (it.role || 'Other') ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
+        <label class="wide">Size (optional)<input data-f="size" value="${esc(it.size || '')}" placeholder="e.g. 600x600 mm"></label>
+      </div>
       <div class="qty-row">
         <label>Qty<input data-f="qty" type="number" inputmode="decimal" value="${esc(it.qty)}"></label>
         <label>Unit<select data-f="unit">${UNITS.map((u) => `<option${u === it.unit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
@@ -309,7 +319,7 @@ $('sel-areas').addEventListener('input', (e) => {
   const v = e.target.value;
   if (f === 'area-name') a.name = v;
   else if (it && f === 'pdfName') it.pdfName = v;
-  else if (it && f === 'desc') it.desc = v;
+  else if (it && (f === 'desc' || f === 'size')) it[f] = v;
   else if (it && (f === 'rate' || f === 'qty')) it[f] = v;
   else return;
   if (itemEl) itemEl.querySelector('.amount').innerHTML = itemEl.querySelector('.amount').innerHTML.replace(/Amount: ₹[\d,]*/, `Amount: ₹${money(amountOf(it))}`);
@@ -321,6 +331,7 @@ $('sel-areas').addEventListener('change', (e) => {
   const { it } = where(e);
   if (!it || !f) return;
   const v = e.target.value;
+  if (f === 'photo') return addPhoto(it, e.target.files[0]);
   if (f === 'role' || f === 'unit') it[f] = v;
   else if (f === 'pick') {
     it.pick = Number(v);
@@ -336,16 +347,20 @@ $('sel-areas').addEventListener('click', (e) => {
   const act = e.target.dataset.act;
   if (!act) return;
   const { a, ai, itemEl } = where(e);
-  if (act === 'del-area' && confirm(`Remove "${a.name || 'this area'}" and its tiles?`)) sel.data.areas.splice(ai, 1);
-  else if (act === 'del-item') a.items.splice(Number(itemEl.dataset.item), 1);
-  else if (act === 'add-other') a.items.push({ kind: 'other', desc: '', qty: '', unit: 'Bag', rate: '' });
-  else if (act === 'add-tile') return startPicking(ai);
+  if (act === 'target') { target = ai; return renderSelection(); }
+  if (act === 'del-area' && confirm(`Remove "${a.name || 'this area'}" and its products?`)) {
+    sel.data.areas.splice(ai, 1);
+    if (target >= ai) target = Math.max(0, target - 1);
+  } else if (act === 'del-item') a.items.splice(Number(itemEl.dataset.item), 1);
+  else if (act === 'add-other') { target = ai; a.items.push({ kind: 'other', desc: '', role: 'Other', size: '', qty: '', unit: 'Pcs', rate: '', photo: null }); }
+  else if (act === 'add-tile') { target = ai; return startPicking(ai); }
   else return;
   renderSelection();
 });
 
 $('sel-add-area').addEventListener('click', () => {
   sel.data.areas.push({ name: '', items: [] });
+  target = sel.data.areas.length - 1;
   renderSelection();
   const names = document.querySelectorAll('.area-name');
   names[names.length - 1]?.focus();
@@ -366,7 +381,7 @@ document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener(
 // showroom's usual ones, which admins can change from any quotation.
 const Q_COLS = [['serial', 'Sr. no.'], ['pic', 'Tile picture'], ['size', 'Size'], ['finish', 'Finish'], ['role', 'Used as (wall, floor…)'],
   ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['amount', 'Amount']];
-const Q_PARTS = [['dates', 'Date and valid until'], ['totals', 'Totals and grand total'], ['words', 'Amount in words'],
+const Q_PARTS = [['dates', 'Date and valid until'], ['areas', 'Area-wise summary'], ['totals', 'Totals and grand total'], ['words', 'Amount in words'],
   ['terms', 'Terms & conditions'], ['bank', 'Bank details'], ['thanks', 'Thank-you line'], ['brands', 'Brand logos strip']];
 const allOn = (list) => Object.fromEntries(list.map(([k]) => [k, true]));
 
@@ -475,6 +490,82 @@ async function saveUsualQuote() {
   if (error) return alert('Could not save. Only an admin can change the usual terms.');
   businesses[room.settings] = value;
   flash(`Saved as the usual for ${room.name}`);
+}
+
+// ---------- adding products from the box at the top ----------
+
+// The ticked area takes every product picked in the box at the top, one after another.
+let target = 0;
+let targetOf = null;         // the selection `target` belongs to; another one starts at its last area
+
+function showTarget() {
+  const areas = sel.data.areas;
+  if (targetOf !== sel) { targetOf = sel; target = Math.max(0, areas.length - 1); }
+  if (target >= areas.length) target = Math.max(0, areas.length - 1);
+  $('qa-where').textContent = areas.length ? `Adding to: ${areas[target].name || `Area ${target + 1}`}` : 'Adding to: a new area';
+}
+
+let qaTimer = null;
+let qaTurn = 0;
+function hideQuick() { $('qa-list').hidden = true; qaTurn++; }
+
+$('qa-q').addEventListener('input', () => {
+  clearTimeout(qaTimer);
+  const q = $('qa-q').value.trim();
+  if (!q) return hideQuick();
+  qaTimer = setTimeout(async () => {
+    const turn = ++qaTurn;
+    const { data } = await db.rpc('suggest_tiles', { q, p_brand: null, p_size: null });
+    if (turn !== qaTurn) return;
+    if (!data?.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
+    const urls = await signedUrls(data.map((t) => t.thumb_path));
+    if (turn !== qaTurn) return;
+    $('qa-list').innerHTML = data.map((t) => `<li><button type="button" data-id="${t.id}">
+      ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
+      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}</span></span></button></li>`).join('');
+    $('qa-list').hidden = false;
+  }, 200);
+});
+
+$('qa-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-id]');
+  if (!btn) return;
+  hideQuick();
+  $('qa-q').value = '';
+  $('qa-q').focus();
+  if (!sel.data.areas.length) { sel.data.areas.push({ name: '', items: [] }); target = 0; }
+  const area = sel.data.areas[target];
+  const id = Number(btn.dataset.id);
+  const [{ data: t }, { data: offers }] = await Promise.all([
+    db.from('tiles').select('id, brand, name, image_path, thumb_path').eq('id', id).single(),
+    db.from('offers').select('size, finish, packing, box_sqft, selling_price, unit').eq('tile_id', id).order('size'),
+  ]);
+  if (!t) return alert('Could not add it. Check your internet.');
+  area.items.push(tileItem(t, offers, 'Wall'));
+  renderSelection();
+  changed(true);
+  $('qa-msg').textContent = `Added ${t.name} to ${area.name || `Area ${target + 1}`}`;
+});
+
+document.addEventListener('click', (e) => { if (!e.target.closest('.qa-wrap')) hideQuick(); });
+
+// a picture of a product that is not in the app, kept small inside the selection itself
+async function addPhoto(it, file) {
+  if (!file) return;
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 900 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    it.photo = c.toDataURL('image/jpeg', 0.8);
+  } catch {
+    return alert('Could not read this picture. Try another one.');
+  }
+  renderSelection();
+  changed(true);
 }
 
 // ---------- choosing a tile from the search screen ----------
@@ -672,7 +763,7 @@ let C = PALETTES.gs;
 // A picture cut to the same shape every time (aspect = width / height), so all boxes match.
 async function pictureData(path, { maxSide = 1400, portrait = false, aspect = null } = {}) {
   if (!path) return null;
-  const urls = await signedUrls([path]);
+  const urls = path.startsWith('data:') ? { [path]: path } : await signedUrls([path]);
   if (!urls[path]) return null;
   try {
     const blob = await (await fetch(urls[path])).blob();
@@ -738,6 +829,7 @@ function sizeText(o) {
 }
 
 function tileDetails(it) {
+  if (it.kind === 'other') return it.size || '';
   const o = offerOf(it);
   return [sizeText(o), finishTag(o.finish) && o.finish].filter(Boolean).join('  ·  ');
 }
@@ -778,14 +870,23 @@ function busy(on, text = 'Making the PDF…') {
   ['sel-pdf', 'sel-quote'].forEach((id) => ($(id).disabled = on));
 }
 
+// what the selection PDF shows: tiles, and products not in the app once they have a name
 function tileItems(area) {
-  return area.items.filter((it) => it.kind === 'tile');
+  return area.items.filter((it) => it.kind === 'tile' || (it.desc || '').trim());
+}
+
+function itemName(it) {
+  return it.kind === 'tile' ? it.pdfName || it.name : it.desc.trim();
+}
+
+function itemPicture(it) {
+  return it.kind === 'tile' ? it.image_path : it.photo;
 }
 
 // ---------- selection PDF ----------
 
 async function selectionPdf() {
-  if (!sel.data.areas.some((a) => tileItems(a).length)) return alert('Add at least one tile first.');
+  if (!sel.data.areas.some((a) => tileItems(a).length)) return alert('Add at least one product first.');
   if (!(await saveSelection(true))) return;
   busy(true);
   try {
@@ -840,9 +941,9 @@ async function selectionPdf() {
         need(30);
         const x2 = colX[col];
         pen(doc, 'Poppins', 'bold', 6.8, C.accentDark);
-        doc.text(it.role.toUpperCase(), x2, y, { charSpace: 0.6 });
+        doc.text((it.role || 'Other').toUpperCase(), x2, y, { charSpace: 0.6 });
         pen(doc, 'Poppins', 'bold', 9.5, C.ink);
-        doc.text(it.pdfName || it.name, x2 + 66, y, { maxWidth: colW - 66 });
+        doc.text(itemName(it), x2 + 66, y, { maxWidth: colW - 66 });
         pen(doc, 'Poppins', 'normal', 7.8, C.grey);
         doc.text(tileDetails(it), x2 + 66, y + 11, { maxWidth: colW - 66 });
         y += 28;
@@ -877,7 +978,7 @@ async function selectionPdf() {
         for (const [k, it] of group.entries()) {
           const x = x0 + k * (cardW + gap);
           busy(true, `Making the PDF… picture ${++done} of ${total}`);
-          const pic = await pictureData(it.image_path, { portrait: true, aspect: cardW / picH });
+          const pic = await pictureData(itemPicture(it), { portrait: it.kind === 'tile', aspect: cardW / picH });
           doc.setFillColor(...C.white); doc.rect(x - 6, picTop - 6, cardW + 12, picH + 12, 'F');
           if (pic) doc.addImage(pic.src, 'JPEG', x, picTop, cardW, picH);
           else {
@@ -887,11 +988,11 @@ async function selectionPdf() {
           doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.rect(x - 6, picTop - 6, cardW + 12, picH + 12);
           const ty = picTop + picH + 26;
           pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
-          doc.text(it.role.toUpperCase(), x, ty, { charSpace: 1 });
+          doc.text((it.role || 'Other').toUpperCase(), x, ty, { charSpace: 1 });
           pen(doc, 'Playfair', 'bold', 13.5, C.main);
-          doc.text(doc.splitTextToSize(it.pdfName || it.name, cardW).slice(0, 2), x, ty + 18, { lineHeightFactor: 1.15 });
+          doc.text(doc.splitTextToSize(itemName(it), cardW).slice(0, 2), x, ty + 18, { lineHeightFactor: 1.15 });
           pen(doc, 'Poppins', 'normal', 8, C.grey);
-          doc.text(tileDetails(it), x, ty + ((it.pdfName || it.name).length > 30 ? 50 : 34), { maxWidth: cardW });
+          doc.text(tileDetails(it), x, ty + (itemName(it).length > 30 ? 50 : 34), { maxWidth: cardW });
         }
       }
     }
@@ -1033,7 +1134,9 @@ async function quotationPdf() {
     let serial = 0, subtotal = 0, withGst = 0, n = 0;
     const count = rows.reduce((s, a) => s + a.items.length, 0);
     const descW = col.desc.w - 12;
+    const areaSums = [];
     for (const area of rows) {
+      const before = subtotal;
       if (room(24 + 34)) tableHead();
       doc.setFillColor(...C.sand); doc.rect(M, y, W, 24, 'F');
       pen(doc, 'Playfair', 'bold', 11, C.main);
@@ -1051,17 +1154,19 @@ async function quotationPdf() {
         withGst += amountOf(it);
         pen(doc, 'Poppins', 'bold', 9, C.ink);
         const name = doc.splitTextToSize(tile ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
-        const detail = tile ? [show.finish && finishTag(o.finish) && o.finish, show.role && it.role].filter(Boolean).join('  ·  ') : '';
+        const detail = [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && it.role === 'Other') && it.role].filter(Boolean).join('  ·  ');
         pen(doc, 'Poppins', 'normal', 7.5, C.grey);
         const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
-        const size = col.size && tile ? doc.splitTextToSize(sizeText(o), col.size.w - 10).slice(0, 3) : [];
+        const sizeLine = tile ? sizeText(o) : (it.size || '').trim();
+        const size = col.size && sizeLine ? doc.splitTextToSize(sizeLine, col.size.w - 10).slice(0, 3) : [];
+        const picPath = tile ? it.thumb_path || it.image_path : it.photo;
         const textH = name.length * 11 + det.length * 9.5;
-        const h = Math.max(pics && tile ? 52 : 28, textH + 16, size.length * 9.5 + 16);
+        const h = Math.max(pics && picPath ? 52 : 28, textH + 16, size.length * 9.5 + 16);
         if (room(h)) tableHead();
         const mid = y + h / 2;
         if (col.serial) { pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(String(++serial), col.serial.x + 6, mid + 3); }
-        if (pics && tile) {
-          const pic = await pictureData(it.thumb_path || it.image_path, { maxSide: 240, aspect: 1 });
+        if (pics && picPath) {
+          const pic = await pictureData(picPath, { maxSide: 240, aspect: 1 });
           if (pic) doc.addImage(pic.src, 'JPEG', col.pic.x + 4, y + (h - 42) / 2, 42, 42);
         }
         let ty = mid - textH / 2 + 8;
@@ -1083,6 +1188,7 @@ async function quotationPdf() {
         doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
         y += h;
       }
+      areaSums.push([area.name || 'Selection', subtotal - before]);
     }
 
     // the ticked lines, e.g. "Cartage charges will be extra"
@@ -1094,6 +1200,25 @@ async function quotationPdf() {
       y += t.length * 11 + 8;
     }
     y += 4;
+
+    // each area's total, when the quotation has more than one area
+    if (part.areas && areaSums.length > 1) {
+      const sw = 300, sx = R - sw;
+      room(areaSums.length * 20 + 50);
+      y += 10;
+      doc.setFillColor(...C.sand); doc.rect(sx, y, sw, 22, 'F');
+      pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
+      doc.text('AREA-WISE SUMMARY', sx + 10, y + 14.5, { charSpace: 1 });
+      doc.text('AMOUNT', R - 10, y + 14.5, { align: 'right', charSpace: 1 });
+      y += 22;
+      areaSums.forEach(([name, sum]) => {
+        pen(doc, 'Poppins', 'normal', 9, C.ink); doc.text(name, sx + 10, y + 13.5, { maxWidth: sw - 110 });
+        doc.text(rs(sum), R - 10, y + 13.5, { align: 'right' });
+        doc.setDrawColor(...C.line); doc.line(sx, y + 20, R, y + 20);
+        y += 20;
+      });
+      y += 6;
+    }
 
     // totals
     const labour = Number(d.labour) || 0;

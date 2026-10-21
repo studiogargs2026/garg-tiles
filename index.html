@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Master View">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
   <header class="bar">
@@ -98,6 +98,14 @@
         <label>Address (for quotation) <input id="sel-address" autocomplete="off"></label>
         <label>Phone (for quotation) <input id="sel-phone" type="tel" autocomplete="off"></label>
       </div>
+      <div class="card pad qa-card">
+        <p id="qa-where" class="qa-where"></p>
+        <div class="qa-wrap suggest-wrap">
+          <input id="qa-q" type="search" placeholder="Type a product name to add it" autocomplete="off" enterkeyhint="search">
+          <ul id="qa-list" class="suggest" hidden></ul>
+        </div>
+        <p id="qa-msg" class="muted qa-msg"></p>
+      </div>
       <datalist id="area-names"></datalist>
       <div id="sel-areas"></div>
       <button id="sel-add-area" type="button" class="ghost">+ Add area</button>
@@ -154,7 +162,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="link danger" hidden>Delete</button>
-      <p class="muted version">App version 19</p>
+      <p class="muted version">App version 20</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -214,10 +222,10 @@
   </nav>
 
   <script src="vendor/supabase.js"></script>
-  <script src="config.js?v=19"></script>
-  <script src="app.js?v=19"></script>
+  <script src="config.js?v=20"></script>
+  <script src="app.js?v=20"></script>
   <script src="vendor/jspdf.umd.min.js" defer></script>
-  <script src="selection.js?v=19"></script>
-  <script src="photo.js?v=19"></script>
+  <script src="selection.js?v=20"></script>
+  <script src="photo.js?v=20"></script>
 </body>
 </html>
