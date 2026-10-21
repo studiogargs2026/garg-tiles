@@ -53,5 +53,13 @@ Deno.serve(async (req) => {
     return error ? reply({ error: error.message }, 500) : reply({ cleared: ids.length });
   }
 
+  // tiles no longer in the catalogs (e.g. a combined decor entry split into one tile per decor)
+  if (op === "delete_tiles") {
+    const ids: number[] = await req.json();
+    const { error: e1 } = await db.from("offers").delete().in("tile_id", ids);
+    const { error: e2 } = e1 ? { error: e1 } : await db.from("tiles").delete().in("id", ids);
+    return e2 ? reply({ error: e2.message }, 500) : reply({ deleted: ids.length });
+  }
+
   return reply({ error: "unknown op" }, 400);
 });
