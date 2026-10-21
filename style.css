@@ -3,7 +3,7 @@
   color-scheme: light;
   --bg: #fff8f0; --card: #fff; --ink: #1e293b; --muted: #64748b;
   --line: #f1e4d6; --accent: #f05a28; --accent-2: #e8317a; --price: #0d9488; --error: #dc2626;
-  --shadow: 0 2px 10px rgba(240, 90, 40, .10);
+  --shadow: 0 2px 10px rgba(240, 90, 40, .10); --soft: #fff1e8; --glow: rgba(240, 90, 40, .15);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -17,7 +17,7 @@ h1 { font-size: 1.45rem; color: var(--accent); }
 label { display: block; margin: 0 0 12px; font-size: .9rem; color: var(--muted); }
 input, textarea { display: block; width: 100%; margin-top: 4px; padding: 12px; font: inherit; color: var(--ink);
   background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; }
-input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(240, 90, 40, .15); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
 button { font: inherit; cursor: pointer; }
 .primary { padding: 12px 20px; border: 0; border-radius: 12px; color: #fff; font-weight: 600;
   background: linear-gradient(100deg, var(--accent), var(--accent-2)); box-shadow: var(--shadow); }
@@ -35,13 +35,13 @@ main .link { color: var(--accent); font-weight: 500; }
 .filters { display: flex; gap: 8px; margin: 10px 0 0; }
 select { flex: 1; min-width: 0; padding: 11px 10px; font: inherit; color: var(--ink); background: var(--card);
   border: 1.5px solid var(--line); border-radius: 12px; }
-select.on { border-color: var(--accent); background: #fff1e8; font-weight: 600; }
+select.on { border-color: var(--accent); background: var(--soft); font-weight: 600; }
 .more { display: block; margin: 16px auto; }
 .muted { color: var(--muted); font-size: .9rem; }
 .error { color: var(--error); }
 .grid { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
-.card button { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
+.grid .card button { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
 .card img, .thumb-empty { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--line); }
 .card .info { padding: 8px 10px 10px; }
 .card .name { font-weight: 600; }
@@ -84,7 +84,7 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .item { border-top: 1px solid var(--line); padding: 10px 0; }
 .item-top { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
 .item-top .grow { flex: 1; min-width: 0; }
-.sel-thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: var(--line); flex: none; }
+.item .sel-thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: var(--line); flex: none; }
 .qty-row { display: flex; gap: 8px; }
 .qty-row label { flex: 1; min-width: 0; margin-bottom: 8px; }
 .qty-row label.wide { flex: 2; }
@@ -96,7 +96,7 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .sel-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 14px 0 6px; }
 .sel-actions button { padding: 12px 6px; }
 .pick-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 14px;
-  border-radius: 12px; background: #fff1e8; border: 1.5px solid var(--accent); font-weight: 600; }
+  border-radius: 12px; background: var(--soft); border: 1.5px solid var(--accent); font-weight: 600; }
 textarea { resize: vertical; }
 .draft-note { margin: -6px 0 10px; font-size: .85rem; min-height: 1em; }
 #sel-unsaved { display: block; width: 100%; margin-top: 8px; padding: 12px; }
@@ -117,6 +117,32 @@ label.ghost { color: var(--accent); }
 .best { color: var(--price); }
 .ph-roles { display: flex; gap: 6px; margin: 0 0 10px; }
 .ph-roles button { flex: 1; padding: 10px 4px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font-weight: 600; font-size: .85rem; }
-.ph-roles button.on { border-color: var(--accent); background: #fff1e8; color: var(--accent); }
+.ph-roles button.on { border-color: var(--accent); background: var(--soft); color: var(--accent); }
 .ph-roles button.done::after { content: " ✓"; color: var(--price); }
 #ph-status { font-weight: 600; color: var(--accent-2); }
+
+/* two showrooms: KP Enterprises has its own colours (Garg's Studio keeps the ones above) */
+body[data-showroom="kp"] {
+  --bg: #f2f8fc; --line: #d6e7f2; --accent: #21688a; --accent-2: #29a9e0; --soft: #e3f2fb;
+  --shadow: 0 2px 10px rgba(33, 104, 138, .12); --glow: rgba(41, 169, 224, .18);
+}
+.bar .brand { display: flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: #fff; font: inherit; font-weight: 700; font-size: 1.15rem; }
+.brand img { height: 34px; width: auto; border-radius: 6px; }
+.showrooms { display: grid; gap: 14px; margin-top: 18px; }
+.showroom-pick { display: flex; align-items: center; gap: 16px; width: 100%; padding: 14px; border-radius: 16px; border: 2px solid; background: var(--card);
+  font-size: 1.15rem; font-weight: 700; text-align: left; box-shadow: var(--shadow); }
+.showroom-pick img { width: 84px; height: 84px; border-radius: 12px; object-fit: contain; }
+.showroom-pick.gs { border-color: #52011c; color: #52011c; }
+.showroom-pick.gs img { background: #52011c; }
+.showroom-pick.kp { border-color: #21688a; color: #21688a; }
+#sel-admin { margin-top: 14px; }
+#sel-admin .filters { margin: 0 0 6px; }
+.by-person { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .88rem; }
+.by-person th, .by-person td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+.by-person th:first-child, .by-person td:first-child { text-align: left; }
+.by-person th { color: var(--muted); font-weight: 500; }
+.by-person tr.all td { font-weight: 700; }
+.sel-row .who { display: block; font-size: .8rem; color: var(--muted); }
+.room-tag { display: inline-block; padding: 1px 7px; margin-left: 6px; border-radius: 8px; font-size: .72rem; font-weight: 700; color: #fff; vertical-align: middle; }
+.room-tag.gs { background: #52011c; }
+.room-tag.kp { background: #21688a; }

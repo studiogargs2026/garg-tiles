@@ -11,10 +11,9 @@ const AREA_NAMES = ['Master Washroom', 'Powder Washroom', 'Common Washroom', 'Ot
 const UNITS = ['Bag', 'Pcs', 'Box', 'Sqft', 'Set', 'Rft'];
 
 let sel = null;              // the selection being edited
-let business = null;         // letterhead details for the quotation
 
 function blankSelection() {
-  return { id: null, quote_no: '', client: '', data: { address: '', phone: '', nameStyle: 'real', pictures: true, labour: '', notes: '', gst: 'in', gstRate: 18, areas: [] } };
+  return { id: null, quote_no: '', client: '', showroom, data: { address: '', phone: '', nameStyle: 'real', pictures: true, labour: '', notes: '', gst: 'in', gstRate: 18, areas: [] } };
 }
 
 // ---------- names and sizes as printed ----------
@@ -35,8 +34,13 @@ function shortName(name) {
   return name.split(/\s+/).filter(Boolean).map((w) => (/^\d/.test(w) ? w : w[0].toUpperCase() + '.')).join('');
 }
 
+// the showroom a selection belongs to; selections made before there were two are Garg's Studio
+function roomOf(s) {
+  return SHOWROOMS[s?.showroom] ? s.showroom : 'gs';
+}
+
 function newCode() {
-  return 'GS-' + String(Math.floor(1000 + Math.random() * 9000));
+  return SHOWROOMS[roomOf(sel)].code + '-' + String(Math.floor(1000 + Math.random() * 9000));
 }
 
 function applyNameStyle(style) {
@@ -98,12 +102,65 @@ async function openSelections() {
   const unsaved = draft?.sel && !draft.sel.id && (draft.sel.client || draft.sel.data?.areas?.length);
   $('sel-unsaved').hidden = !unsaved;
   $('sel-list').innerHTML = '<li class="muted">Loading…</li>';
-  const { data, error } = await db.from('selections').select('id, client, quote_no, updated_at').order('updated_at', { ascending: false }).limit(100);
+  $('sel-title').textContent = isAdmin ? 'All selections and quotations' : 'My selections and quotations';
+  $('sel-admin').hidden = !isAdmin;
+  // the database only gives each person their own; admins get everyone's
+  const [{ data, error }, people] = await Promise.all([
+    db.from('selections').select('id, client, quote_no, updated_at, showroom, created_by, total').order('updated_at', { ascending: false }).limit(1000),
+    isAdmin ? staffNames() : {},
+  ]);
   if (error) return ($('sel-list').innerHTML = '<li class="error">Could not load. Check your internet.</li>');
-  $('sel-list').innerHTML = data.length ? data.map((s) => `<li class="card sel-row"><button data-sel="${s.id}">
-      <b>${esc(s.client)}</b><span class="muted">${s.quote_no ? 'Quote ' + esc(s.quote_no) + ' · ' : ''}${new Date(s.updated_at).toLocaleDateString('en-IN')}</span>
-    </button></li>`).join('') : '<li class="muted">No selections yet. Tap "New selection" to start one.</li>';
+  allSelections = data;
+  staff = people;
+  if (isAdmin) fillPersonFilter();
+  showSelectionList();
 }
+
+let allSelections = [];
+let staff = {};
+
+async function staffNames() {
+  const { data } = await db.from('profiles').select('id, full_name, email');
+  return Object.fromEntries((data || []).map((p) => [p.id, p.full_name || p.email || 'Unnamed']));
+}
+
+function fillPersonFilter() {
+  const keep = $('sel-f-person').value;
+  const ids = [...new Set(allSelections.map((s) => s.created_by))].sort((a, b) => (staff[a] || '').localeCompare(staff[b] || ''));
+  $('sel-f-person').innerHTML = '<option value="">Everyone</option>' + ids.map((id) => `<option value="${esc(id)}">${esc(staff[id] || 'Unknown')}</option>`).join('');
+  $('sel-f-person').value = ids.includes(keep) ? keep : '';
+}
+
+function showSelectionList() {
+  const room = isAdmin ? $('sel-f-room').value : '';
+  const person = isAdmin ? $('sel-f-person').value : '';
+  const quotesOnly = isAdmin && $('sel-f-quotes').checked;
+  const rows = allSelections.filter((s) => (!room || roomOf(s) === room) && (!person || s.created_by === person) && (!quotesOnly || s.quote_no));
+  if (isAdmin) summary(rows);
+  const tag = (s) => `<span class="room-tag ${roomOf(s)}">${SHOWROOMS[roomOf(s)].code}</span>`;
+  $('sel-list').innerHTML = rows.length ? rows.map((s) => `<li class="card sel-row"><button data-sel="${s.id}">
+      <span><b>${esc(s.client)}</b>${isAdmin ? tag(s) : ''}${isAdmin ? `<span class="who">by ${esc(staff[s.created_by] || 'Unknown')}</span>` : ''}</span>
+      <span class="muted">${s.quote_no ? 'Quote ' + esc(s.quote_no) + ' · ' : ''}${s.total ? '₹' + money(s.total) + ' · ' : ''}${new Date(s.updated_at).toLocaleDateString('en-IN')}</span>
+    </button></li>`).join('') : `<li class="muted">${allSelections.length ? 'Nothing matches these filters.' : 'No selections yet. Tap "New selection" to start one.'}</li>`;
+}
+
+// admin: how many selections and quotations each person made, and the value quoted
+function summary(rows) {
+  const by = {};
+  for (const s of rows) {
+    const k = s.created_by;
+    by[k] ||= { sel: 0, quotes: 0, value: 0 };
+    by[k].sel++;
+    if (s.quote_no) { by[k].quotes++; by[k].value += Number(s.total) || 0; }
+  }
+  const all = Object.values(by).reduce((t, r) => ({ sel: t.sel + r.sel, quotes: t.quotes + r.quotes, value: t.value + r.value }), { sel: 0, quotes: 0, value: 0 });
+  const line = (name, r, cls = '') => `<tr class="${cls}"><td>${esc(name)}</td><td>${r.sel}</td><td>${r.quotes}</td><td>₹${money(r.value)}</td></tr>`;
+  $('sel-by-person').innerHTML = '<tr><th>Employee</th><th>Selections</th><th>Quotations</th><th>Quoted value</th></tr>'
+    + Object.entries(by).sort((a, b) => b[1].value - a[1].value).map(([id, r]) => line(staff[id] || 'Unknown', r)).join('')
+    + (Object.keys(by).length > 1 ? line('Total', all, 'all') : '');
+}
+
+['sel-f-room', 'sel-f-person', 'sel-f-quotes'].forEach((id) => $(id).addEventListener('change', showSelectionList));
 
 $('nav-sel').addEventListener('click', openSelections);
 $('sel-new').addEventListener('click', () => {
@@ -135,6 +192,8 @@ $('sel-list').addEventListener('click', async (e) => {
 
 function renderSelection() {
   const d = sel.data;
+  $('selection-view').querySelector('h1').textContent = `Client selection · ${SHOWROOMS[roomOf(sel)].name}`;
+  $('sel-code-eg').textContent = `${SHOWROOMS[roomOf(sel)].code}-4821`;
   $('sel-client').value = sel.client;
   $('sel-address').value = d.address || '';
   $('sel-phone').value = d.phone || '';
@@ -207,6 +266,14 @@ async function refreshThumbs() {
 function updateTotal() {
   const sub = sel.data.areas.flatMap((a) => a.items).reduce((s, it) => s + amountOf(it), 0);
   $('sel-total').textContent = `Total: ₹${money(sub + (Number(sel.data.labour) || 0))}`;
+}
+
+// the quotation's grand total (GST added on top when the quotation adds it), kept for the admin summary
+function grandTotal() {
+  const d = sel.data;
+  const sub = d.areas.flatMap((a) => a.items).reduce((s, it) => s + amountOf(it), 0);
+  const gst = d.gst === 'add' ? Math.round(sub * (Number(d.gstRate) || 18) / 100) : 0;
+  return sub + gst + (Number(d.labour) || 0);
 }
 
 function where(e) {
@@ -347,13 +414,22 @@ const DRAFT_KEY = 'garg-selection-draft';
 let saving = Promise.resolve(false);
 let autoTimer = null;
 
+// each person on a shared phone has their own draft
+function draftKey() {
+  return `${DRAFT_KEY}:${userId}`;
+}
+
 function readDraft() {
-  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { return null; }
+  try {
+    const old = localStorage.getItem(DRAFT_KEY);      // drafts kept before there was one per person
+    if (old) { localStorage.setItem(draftKey(), old); localStorage.removeItem(DRAFT_KEY); }
+    return JSON.parse(localStorage.getItem(draftKey()));
+  } catch { return null; }
 }
 
 function keepLocal(open = true) {
   if (!sel) return;
-  try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ sel, open, at: Date.now() })); } catch { /* private mode */ }
+  try { localStorage.setItem(draftKey(), JSON.stringify({ sel, open, at: Date.now() })); } catch { /* private mode */ }
 }
 
 function draftNote(text) {
@@ -382,9 +458,9 @@ function saveSelection(quiet, auto) {
 
 async function saveNow(quiet, auto) {
   if (!sel.client.trim()) { if (!auto) alert("Please type the client's name first."); return false; }
-  const row = { client: sel.client.trim(), quote_no: sel.quote_no || null, data: sel.data, updated_at: new Date().toISOString() };
+  const row = { client: sel.client.trim(), quote_no: sel.quote_no || null, data: sel.data, total: grandTotal(), updated_at: new Date().toISOString() };
   const res = sel.id ? await db.from('selections').update(row).eq('id', sel.id).select('id').single()
-    : await db.from('selections').insert(row).select('id').single();
+    : await db.from('selections').insert({ ...row, showroom: roomOf(sel) }).select('id').single();
   if (res.error) { if (!auto) alert('Could not save. Check your internet and try again.'); return false; }
   sel.id = res.data.id;
   keepLocal(current === 'selection-view' || pickArea !== null);
@@ -425,7 +501,7 @@ $('sel-delete').addEventListener('click', async () => {
   if (!confirm(`Delete the selection for ${sel.client}?`)) return;
   const { error } = await db.from('selections').delete().eq('id', sel.id);
   if (error) return alert('Only the person who made it, or an admin, can delete it.');
-  if (readDraft()?.sel?.id === sel.id) try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+  if (readDraft()?.sel?.id === sel.id) try { localStorage.removeItem(draftKey()); } catch { /* ignore */ }
   sel = null;
   goBack();
   openSelections();
@@ -433,12 +509,14 @@ $('sel-delete').addEventListener('click', async () => {
 
 // ---------- pictures, fonts and colours for the PDFs ----------
 
-// Garg's Studio colours, from the logo
-const C = {
-  maroon: [82, 1, 28], gold: [255, 183, 115], goldDark: [176, 108, 46], cream: [252, 245, 236],
-  sand: [244, 232, 218], ink: [40, 24, 28], grey: [118, 102, 106], line: [230, 214, 200], white: [255, 255, 255],
+// Each showroom's colours, from its logo: main = the logo's background, accent = its lettering
+const PALETTES = {
+  gs: { main: [82, 1, 28], accent: [255, 183, 115], accentDark: [176, 108, 46], cream: [252, 245, 236],
+    sand: [244, 232, 218], ink: [40, 24, 28], grey: [118, 102, 106], line: [230, 214, 200], white: [255, 255, 255] },
+  kp: { main: [12, 45, 72], accent: [64, 185, 236], accentDark: [33, 104, 138], cream: [243, 248, 252],
+    sand: [224, 238, 247], ink: [18, 32, 44], grey: [96, 110, 122], line: [208, 224, 236], white: [255, 255, 255] },
 };
-const LOGO_RATIO = 716 / 600;      // icons/gs-logo.jpg, gold logo on maroon
+let C = PALETTES.gs;
 
 // A picture cut to the same shape every time (aspect = width / height), so all boxes match.
 async function pictureData(path, { maxSide = 1400, portrait = false, aspect = null } = {}) {
@@ -472,7 +550,9 @@ async function staticData(url) {
   return new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(blob); });
 }
 
+let logos = {};
 let logoData = null;
+let LOGO_RATIO = 1;
 let fontFiles = null;
 const FONTS = [['Poppins-400.ttf', 'Poppins', 'normal'], ['Poppins-600.ttf', 'Poppins', 'bold'], ['Playfair-700.ttf', 'Playfair', 'bold']];
 
@@ -481,7 +561,10 @@ async function startPdf(options) {
   const doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4', ...options });
   fontFiles ||= await Promise.all(FONTS.map(async ([f]) => (await staticData('vendor/fonts/' + f)).split(',')[1]));
   FONTS.forEach(([f, name, style], i) => { doc.addFileToVFS(f, fontFiles[i]); doc.addFont(f, name, style); });
-  logoData ||= await staticData('icons/gs-logo.jpg');
+  const room = SHOWROOMS[roomOf(sel)];
+  C = PALETTES[roomOf(sel)];
+  logoData = logos[room.logo] ||= await staticData(room.logo);
+  LOGO_RATIO = room.logoRatio;
   return doc;
 }
 
@@ -514,7 +597,7 @@ function pageNumbers(doc, label, from, skipLast) {
   const { width: PW, height: PH } = doc.internal.pageSize;
   for (let i = from; i <= n - (skipLast ? 1 : 0); i++) {
     doc.setPage(i);
-    doc.setDrawColor(...C.gold); doc.setLineWidth(0.6);
+    doc.setDrawColor(...C.accent); doc.setLineWidth(0.6);
     doc.line(36, PH - 30, PW - 36, PH - 30);
     pen(doc, 'Poppins', 'normal', 7.5, C.grey);
     doc.text(label, 36, PH - 18);
@@ -563,26 +646,27 @@ async function selectionPdf() {
     const page = (title, sub) => {
       doc.addPage();
       paint(C.cream);
-      doc.setFillColor(...C.maroon); doc.rect(0, 0, PW, 66, 'F');
+      doc.setFillColor(...C.main); doc.rect(0, 0, PW, 66, 'F');
       doc.addImage(logoData, 'JPEG', 30, 7, 52 * LOGO_RATIO, 52);
-      pen(doc, 'Playfair', 'bold', 21, C.gold);
+      pen(doc, 'Playfair', 'bold', 21, C.accent);
       doc.text(title, 112, 42, { maxWidth: 520 });
       if (sub) { pen(doc, 'Poppins', 'normal', 9, C.cream); doc.text(sub, PW - 36, 40, { align: 'right' }); }
     };
     const areas = sel.data.areas.filter((a) => tileItems(a).length);
 
     // cover
-    paint(C.maroon);
+    paint(C.main);
     doc.addImage(logoData, 'JPEG', (PW - 240 * LOGO_RATIO) / 2, 54, 240 * LOGO_RATIO, 240);
-    doc.setDrawColor(...C.gold); doc.setLineWidth(0.8); doc.line(PW / 2 - 50, 322, PW / 2 + 50, 322);
-    pen(doc, 'Playfair', 'bold', 30, C.gold);
+    doc.setDrawColor(...C.accent); doc.setLineWidth(0.8); doc.line(PW / 2 - 50, 322, PW / 2 + 50, 322);
+    pen(doc, 'Playfair', 'bold', 30, C.accent);
     doc.text('Tile Selection', PW / 2, 365, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 13, C.cream);
     doc.text(`Prepared for ${sel.client}`, PW / 2, 395, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 9.5, C.sand);
     doc.text([sel.data.address, today].filter(Boolean).join('   ·   '), PW / 2, 416, { align: 'center', maxWidth: 600 });
-    pen(doc, 'Poppins', 'normal', 8.5, C.gold);
-    doc.text('LUXURY TILES   ·   BATHWARE   ·   ITALIAN MARBLE   ·   WINDOWS', PW / 2, PH - 42, { align: 'center', charSpace: 1 });
+    pen(doc, 'Poppins', 'normal', 8.5, C.accent);
+    const tagline = biz.tagline ?? (roomOf(sel) === 'gs' ? 'LUXURY TILES   ·   BATHWARE   ·   ITALIAN MARBLE   ·   WINDOWS' : '');
+    if (tagline) doc.text(tagline, PW / 2, PH - 42, { align: 'center', charSpace: 1 });
 
     // summary: every area and its tiles on one page (more pages if needed)
     page('Your Selection', sel.client);
@@ -597,14 +681,14 @@ async function selectionPdf() {
     areas.forEach((area) => {
       need(48);
       const x = colX[col];
-      pen(doc, 'Playfair', 'bold', 13, C.maroon);
+      pen(doc, 'Playfair', 'bold', 13, C.main);
       doc.text(area.name || 'Selection', x, y);
-      doc.setDrawColor(...C.gold); doc.setLineWidth(0.8); doc.line(x, y + 6, x + 40, y + 6);
+      doc.setDrawColor(...C.accent); doc.setLineWidth(0.8); doc.line(x, y + 6, x + 40, y + 6);
       y += 24;
       tileItems(area).forEach((it) => {
         need(30);
         const x2 = colX[col];
-        pen(doc, 'Poppins', 'bold', 6.8, C.goldDark);
+        pen(doc, 'Poppins', 'bold', 6.8, C.accentDark);
         doc.text(it.role.toUpperCase(), x2, y, { charSpace: 0.6 });
         pen(doc, 'Poppins', 'bold', 9.5, C.ink);
         doc.text(it.pdfName || it.name, x2 + 66, y, { maxWidth: colW - 66 });
@@ -621,7 +705,7 @@ async function selectionPdf() {
       need(lines.length * 12 + 40);
       const x = colX[col];
       doc.setFillColor(...C.sand); doc.roundedRect(x, y - 4, colW, lines.length * 12 + 34, 6, 6, 'F');
-      pen(doc, 'Poppins', 'bold', 7.5, C.goldDark);
+      pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
       doc.text('NOTES', x + 12, y + 12, { charSpace: 0.8 });
       pen(doc, 'Poppins', 'normal', 9, C.ink);
       doc.text(lines, x + 12, y + 27);
@@ -651,9 +735,9 @@ async function selectionPdf() {
           }
           doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.rect(x - 6, picTop - 6, cardW + 12, picH + 12);
           const ty = picTop + picH + 26;
-          pen(doc, 'Poppins', 'bold', 7.5, C.goldDark);
+          pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
           doc.text(it.role.toUpperCase(), x, ty, { charSpace: 1 });
-          pen(doc, 'Playfair', 'bold', 13.5, C.maroon);
+          pen(doc, 'Playfair', 'bold', 13.5, C.main);
           doc.text(doc.splitTextToSize(it.pdfName || it.name, cardW).slice(0, 2), x, ty + 18, { lineHeightFactor: 1.15 });
           pen(doc, 'Poppins', 'normal', 8, C.grey);
           doc.text(tileDetails(it), x, ty + ((it.pdfName || it.name).length > 30 ? 50 : 34), { maxWidth: cardW });
@@ -663,9 +747,9 @@ async function selectionPdf() {
 
     // closing page
     doc.addPage();
-    paint(C.maroon);
+    paint(C.main);
     doc.addImage(logoData, 'JPEG', (PW - 170 * LOGO_RATIO) / 2, 80, 170 * LOGO_RATIO, 170);
-    pen(doc, 'Playfair', 'bold', 30, C.gold);
+    pen(doc, 'Playfair', 'bold', 30, C.accent);
     doc.text('Thank You', PW / 2, 312, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 10, C.cream);
     [...(biz.address || []), [biz.phone, biz.email].filter(Boolean).join('   ·   ')].filter(Boolean)
@@ -673,8 +757,9 @@ async function selectionPdf() {
     pen(doc, 'Poppins', 'normal', 8, C.sand);
     doc.text('Pictures show the tile design; the actual tile can vary slightly in shade from batch to batch.', PW / 2, PH - 42, { align: 'center' });
 
-    pageNumbers(doc, `Garg's Studio  ·  Selection for ${sel.client}`, 2, true);
-    await deliver(doc, `${sel.client} - Garg's Studio selection.pdf`);
+    const roomName = SHOWROOMS[roomOf(sel)].name;
+    pageNumbers(doc, `${roomName}  ·  Selection for ${sel.client}`, 2, true);
+    await deliver(doc, `${sel.client} - ${roomName} selection.pdf`);
   } finally {
     busy(false);
   }
@@ -682,20 +767,20 @@ async function selectionPdf() {
 
 // ---------- quotation PDF ----------
 
+// letterhead, bank details and terms of the selection's showroom
+const businesses = {};
 async function loadBusiness() {
-  if (business) return business;
-  const { data } = await db.from('app_settings').select('value').eq('key', 'business').maybeSingle();
-  business = data?.value || { name: "GARG'S STUDIO", address: [], terms: [], bank: {} };
-  return business;
+  const room = SHOWROOMS[roomOf(sel)];
+  if (businesses[room.settings]) return businesses[room.settings];
+  const { data } = await db.from('app_settings').select('value').eq('key', room.settings).maybeSingle();
+  return (businesses[room.settings] = data?.value || { name: room.name.toUpperCase(), address: [], terms: [], bank: {} });
 }
 
+// 01/26-27, 02/26-27... per showroom and financial year; the database counts everyone's quotes
 async function nextQuoteNo() {
-  const now = new Date();
-  const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;   // April to March
-  const tag = `${String(fy).slice(2)}-${String(fy + 1).slice(2)}`;
-  const { data } = await db.from('selections').select('quote_no').like('quote_no', `%/${tag}`);
-  const top = Math.max(0, ...(data || []).map((r) => parseInt(r.quote_no, 10) || 0));
-  return `${String(top + 1).padStart(2, '0')}/${tag}`;
+  const { data, error } = await db.rpc('next_quote_no', { p_showroom: roomOf(sel) });
+  if (error) throw error;
+  return data;
 }
 
 // 1,25,430 -> "Rupees One Lakh Twenty Five Thousand Four Hundred Thirty Only"
@@ -743,9 +828,9 @@ async function quotationPdf() {
     let y = 0;
 
     // letterhead
-    doc.setFillColor(...C.maroon); doc.rect(0, 0, PW, 122, 'F');
+    doc.setFillColor(...C.main); doc.rect(0, 0, PW, 122, 'F');
     doc.addImage(logoData, 'JPEG', M - 8, 10, 102 * LOGO_RATIO, 102);
-    pen(doc, 'Playfair', 'bold', 26, C.gold);
+    pen(doc, 'Playfair', 'bold', 26, C.accent);
     doc.text('QUOTATION', R, 46, { align: 'right', charSpace: 1 });
     pen(doc, 'Poppins', 'normal', 8, C.cream);
     [...(biz.address || []), biz.phone && `Phone: ${biz.phone}`, biz.email, biz.gstin && `GSTIN: ${biz.gstin}`]
@@ -753,7 +838,7 @@ async function quotationPdf() {
 
     // client and quote details
     y = 146;
-    pen(doc, 'Poppins', 'bold', 7.5, C.goldDark);
+    pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
     doc.text('QUOTATION FOR', M, y, { charSpace: 1 });
     pen(doc, 'Poppins', 'bold', 13, C.ink);
     doc.text(sel.client, M, y + 18, { maxWidth: 300 });
@@ -770,7 +855,7 @@ async function quotationPdf() {
     y = Math.max(cy, y + 56) + 16;
 
     const tableHead = () => {
-      doc.setFillColor(...C.maroon); doc.rect(M, y, W, 22, 'F');
+      doc.setFillColor(...C.main); doc.rect(M, y, W, 22, 'F');
       pen(doc, 'Poppins', 'bold', 7.5, C.cream);
       const heads = ['#', pics ? 'TILE' : '', 'DESCRIPTION', 'BOXES', 'QUANTITY', gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE', 'AMOUNT'];
       heads.forEach((h, i) => {
@@ -793,7 +878,7 @@ async function quotationPdf() {
     for (const area of rows) {
       if (room(24 + 34)) tableHead();
       doc.setFillColor(...C.sand); doc.rect(M, y, W, 24, 'F');
-      pen(doc, 'Playfair', 'bold', 11, C.maroon);
+      pen(doc, 'Playfair', 'bold', 11, C.main);
       doc.text(area.name || 'Selection', M + 8, y + 16);
       y += 24;
       for (const it of area.items) {
@@ -841,7 +926,7 @@ async function quotationPdf() {
     }
     if (biz.footer_note) {
       room(22);
-      pen(doc, 'Poppins', 'normal', 8, C.goldDark);
+      pen(doc, 'Poppins', 'normal', 8, C.accentDark);
       doc.text(biz.footer_note, PW / 2, y + 15, { align: 'center', charSpace: 0.5 });
       y += 22;
     }
@@ -861,11 +946,11 @@ async function quotationPdf() {
       y += 20;
     });
     y += 4;
-    doc.setFillColor(...C.maroon); doc.roundedRect(tx, y, 220, 30, 4, 4, 'F');
-    pen(doc, 'Poppins', 'bold', 10.5, C.gold); doc.text('Grand Total', tx + 10, y + 19.5);
+    doc.setFillColor(...C.main); doc.roundedRect(tx, y, 220, 30, 4, 4, 'F');
+    pen(doc, 'Poppins', 'bold', 10.5, C.accent); doc.text('Grand Total', tx + 10, y + 19.5);
     doc.text(rs(grand), R - 10, y + 19.5, { align: 'right' });
     const wordsTop = y - lines.length * 20 - 4;
-    pen(doc, 'Poppins', 'bold', 7.5, C.goldDark);
+    pen(doc, 'Poppins', 'bold', 7.5, C.accentDark);
     doc.text('AMOUNT IN WORDS', M, wordsTop + 13, { charSpace: 1 });
     pen(doc, 'Poppins', 'normal', 9, C.ink);
     doc.text(doc.splitTextToSize(inWords(grand), tx - M - 24), M, wordsTop + 28);
@@ -879,7 +964,7 @@ async function quotationPdf() {
       const h = text.length * 11.5 + 36;
       return { h, draw: (top) => {
         doc.setFillColor(...C.cream); doc.roundedRect(x, top, w, h, 6, 6, 'F');
-        pen(doc, 'Poppins', 'bold', 7.5, C.goldDark); doc.text(title, x + 12, top + 18, { charSpace: 1 });
+        pen(doc, 'Poppins', 'bold', 7.5, C.accentDark); doc.text(title, x + 12, top + 18, { charSpace: 1 });
         pen(doc, 'Poppins', 'normal', 8.5, C.ink); doc.text(text, x + 12, top + 33);
       } };
     };
@@ -893,21 +978,24 @@ async function quotationPdf() {
     const bk = biz.bank || {};
     const terms = box(M, 300, 'TERMS & CONDITIONS', (biz.terms || []).map((t, i) => `${i + 1}. ${t}`));
     const bank = box(M + 312, W - 312, 'BANK DETAILS', [bk.title, bk.name && `Bank: ${bk.name}`, bk.account && `A/c No: ${bk.account}`,
-      bk.branch && `Branch: ${bk.branch}`, bk.ifsc && `IFSC: ${bk.ifsc}`].filter(Boolean));
+      bk.branch && `Branch: ${bk.branch}`, bk.ifsc && `IFSC: ${bk.ifsc}`, bk.upi && `UPI: ${bk.upi}`].filter(Boolean));
     const h = Math.max(terms.h, bank.h);
     room(h + 100);
     terms.draw(y); bank.draw(y);
     y += h + 26;
-    pen(doc, 'Playfair', 'bold', 13, C.maroon);
+    pen(doc, 'Playfair', 'bold', 13, C.main);
     doc.text('Thank you for your business!', PW / 2, y, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 8, C.grey);
     doc.text(`For any questions about this quotation, call ${biz.phone || ''}${biz.email ? ' or write to ' + biz.email : ''}.`, PW / 2, y + 15, { align: 'center' });
     y += 30;
-    const stripH = W * 59 / 560;
-    room(stripH);
-    doc.addImage(await staticData('icons/brand-strip.jpg'), 'JPEG', M, Math.max(y, BOTTOM - stripH), W, stripH);
+    // strip of the brands Garg's Studio sells; KP Enterprises gets its own when Kirti sends it
+    if (roomOf(sel) === 'gs') {
+      const stripH = W * 59 / 560;
+      room(stripH);
+      doc.addImage(await staticData('icons/brand-strip.jpg'), 'JPEG', M, Math.max(y, BOTTOM - stripH), W, stripH);
+    }
 
-    pageNumbers(doc, `Garg's Studio  ·  Quotation ${sel.quote_no}  ·  ${sel.client}`, 1, false);
+    pageNumbers(doc, `${SHOWROOMS[roomOf(sel)].name}  ·  Quotation ${sel.quote_no}  ·  ${sel.client}`, 1, false);
     await deliver(doc, `${sel.client} - Quote ${sel.quote_no}.pdf`);
   } finally {
     busy(false);

@@ -13,11 +13,11 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Garg Tiles">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <header class="bar">
-    <span class="brand">Garg Tiles</span>
+    <button id="brand" class="brand" type="button"><img id="brand-logo" alt="" hidden><span id="brand-name">Garg Tiles</span></button>
     <span>
       <button id="admin" class="link" hidden>Admin</button>
       <button id="logout" class="link" hidden>Log out</button>
@@ -34,6 +34,15 @@
         <p id="login-error" class="error" hidden></p>
       </form>
       <p class="muted"><button id="toggle-signup" class="link">First time here? Create your password</button></p>
+    </section>
+
+    <section id="showroom-view" hidden>
+      <h1>Which showroom are you in?</h1>
+      <p class="muted">The app, the selections and the quotations will use this showroom's logo and details.</p>
+      <div id="showroom-picks" class="showrooms">
+        <button type="button" class="showroom-pick gs" data-room="gs"><img src="icons/gs-logo.jpg" alt=""><span>Garg's Studio</span></button>
+        <button type="button" class="showroom-pick kp" data-room="kp"><img src="icons/kp-logo-light.jpg" alt=""><span>KP Enterprises</span></button>
+      </div>
     </section>
 
     <section id="search-view" hidden>
@@ -62,9 +71,17 @@
       <div id="tile"></div>
     </section>
     <section id="selections-view" hidden>
-      <h1>Client selections</h1>
+      <h1 id="sel-title">My selections and quotations</h1>
       <button id="sel-new" type="button" class="primary">+ New selection</button>
       <button id="sel-unsaved" type="button" class="ghost" hidden>Continue unfinished selection</button>
+      <div id="sel-admin" class="card pad" hidden>
+        <div class="filters">
+          <select id="sel-f-room" aria-label="Showroom"><option value="">Both showrooms</option><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option></select>
+          <select id="sel-f-person" aria-label="Employee"><option value="">Everyone</option></select>
+        </div>
+        <label class="choice"><input type="checkbox" id="sel-f-quotes"> Only quotations</label>
+        <table id="sel-by-person" class="by-person"></table>
+      </div>
       <ul id="sel-list" class="plain sel-list"></ul>
     </section>
 
@@ -85,7 +102,7 @@
         <div class="choices">
           <label class="choice"><input type="radio" name="sel-names" value="real"> Real name</label>
           <label class="choice"><input type="radio" name="sel-names" value="short"> Short form (A.T.E.)</label>
-          <label class="choice"><input type="radio" name="sel-names" value="code"> Code (GS-4821)</label>
+          <label class="choice"><input type="radio" name="sel-names" value="code"> Code (<span id="sel-code-eg">GS-4821</span>)</label>
         </div>
         <p class="muted">You can also change any name in its "Name in PDF" box.</p>
         <label class="choice"><input type="checkbox" id="sel-pictures"> Show tile pictures in the quotation</label>
@@ -112,7 +129,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="link danger" hidden>Delete this selection</button>
-      <p class="muted version">App version 13</p>
+      <p class="muted version">App version 14</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -171,10 +188,10 @@
   </nav>
 
   <script src="vendor/supabase.js"></script>
-  <script src="config.js?v=13"></script>
-  <script src="app.js?v=13"></script>
+  <script src="config.js?v=14"></script>
+  <script src="app.js?v=14"></script>
   <script src="vendor/jspdf.umd.min.js" defer></script>
-  <script src="selection.js?v=13"></script>
-  <script src="photo.js?v=13"></script>
+  <script src="selection.js?v=14"></script>
+  <script src="photo.js?v=14"></script>
 </body>
 </html>

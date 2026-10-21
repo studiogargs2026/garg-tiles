@@ -6,8 +6,9 @@ if (!window.supabase) {
 }
 const db = supabase.createClient(supabaseUrl, supabaseKey);
 const $ = (id) => document.getElementById(id);
-const views = ['login-view', 'search-view', 'tile-view', 'admin-view'];
+const views = ['login-view', 'showroom-view', 'search-view', 'tile-view', 'admin-view'];
 let isAdmin = false;
+let userId = null;
 let lastResults = [];
 let costPin = null;          // remembered until the app is closed, so the PIN is typed once
 let shownTile = null;
@@ -18,16 +19,17 @@ let searchScroll = 0;
 let depth = 0;            // screens above the search screen in the history
 function show(view, remember = true) {
   if (current === 'search-view') searchScroll = window.scrollY;
-  if (remember && current && view !== current && view !== 'login-view') history.pushState({ view, depth: ++depth }, '');
+  const outside = view === 'login-view' || view === 'showroom-view';
+  if (remember && current && view !== current && !outside) history.pushState({ view, depth: ++depth }, '');
   current = view;
   views.forEach((v) => ($(v).hidden = v !== view));
-  $('nav').hidden = view === 'login-view';
+  $('nav').hidden = outside;
   $('nav-back').disabled = view === 'search-view';
   window.scrollTo(0, view === 'search-view' ? searchScroll : 0);
 }
 
 window.addEventListener('popstate', (e) => {
-  if (current === 'login-view') return;
+  if (current === 'login-view' || current === 'showroom-view') return;
   depth = e.state?.depth || 0;
   show(e.state?.view || 'search-view', false);
 });
@@ -66,10 +68,64 @@ async function signedUrls(paths) {
   return Object.fromEntries((data || []).filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
 }
 
+// Two showrooms, each with its own logo, colours, letterhead and quote numbers. Everyone picks
+// their showroom after signing in; the phone remembers it until they log out.
+const SHOWROOMS = {
+  gs: { name: "Garg's Studio", logo: 'icons/gs-logo.jpg', logoRatio: 716 / 600, settings: 'business', code: 'GS', color: '#f05a28' },
+  kp: { name: 'KP Enterprises', logo: 'icons/kp-logo.jpg', logoRatio: 790 / 757, settings: 'business_kp', code: 'KP', color: '#21688a' },
+};
+const SHOWROOM_KEY = 'garg-showroom';
+let showroom = null;
+
+function savedShowroom() {
+  try { return localStorage.getItem(SHOWROOM_KEY); } catch { return null; }
+}
+
+function useShowroom(id) {
+  showroom = id;
+  try { localStorage.setItem(SHOWROOM_KEY, id); } catch { /* private mode */ }
+  const room = SHOWROOMS[id];
+  document.body.dataset.showroom = id;
+  $('brand-name').textContent = room.name;
+  $('brand-logo').src = room.logo;
+  $('brand-logo').hidden = false;
+  document.querySelector('meta[name=theme-color]').content = room.color;
+}
+
+function forgetShowroom() {
+  showroom = null;
+  try { localStorage.removeItem(SHOWROOM_KEY); } catch { /* private mode */ }
+  delete document.body.dataset.showroom;
+  $('brand-name').textContent = 'Garg Tiles';
+  $('brand-logo').hidden = true;
+}
+
+$('showroom-picks').addEventListener('click', (e) => {
+  const id = e.target.closest('[data-room]')?.dataset.room;
+  if (!SHOWROOMS[id]) return;
+  useShowroom(id);
+  db.rpc('set_my_showroom', { p_showroom: id });
+  enterApp();
+});
+
+$('brand').addEventListener('click', () => {
+  if (!showroom || !confirm('Change your showroom?')) return;
+  forgetShowroom();
+  show('showroom-view');
+});
+
 async function startSession(session) {
   $('logout').hidden = !session;
   $('admin').hidden = true;
-  if (!session) return show('login-view');
+  userId = session?.user?.id || null;
+  if (!session) { forgetShowroom(); return show('login-view'); }
+  const saved = savedShowroom();
+  if (!SHOWROOMS[saved]) return show('showroom-view');
+  useShowroom(saved);
+  enterApp();
+}
+
+async function enterApp() {
   history.replaceState({ view: 'search-view', depth: 0 }, '');
   depth = 0;
   current = null;
