@@ -12,10 +12,43 @@ let lastResults = [];
 let costPin = null;          // remembered until the app is closed, so the PIN is typed once
 let shownTile = null;
 
-function show(view) {
+// Each screen change is a step in the phone's history, so Back (ours or the phone's) goes one screen back.
+let current = null;
+let searchScroll = 0;
+let depth = 0;            // screens above the search screen in the history
+function show(view, remember = true) {
+  if (current === 'search-view') searchScroll = window.scrollY;
+  if (remember && current && view !== current && view !== 'login-view') history.pushState({ view, depth: ++depth }, '');
+  current = view;
   views.forEach((v) => ($(v).hidden = v !== view));
-  window.scrollTo(0, 0);
+  $('nav').hidden = view === 'login-view';
+  $('nav-back').disabled = view === 'search-view';
+  window.scrollTo(0, view === 'search-view' ? searchScroll : 0);
 }
+
+window.addEventListener('popstate', (e) => {
+  if (current === 'login-view') return;
+  depth = e.state?.depth || 0;
+  show(e.state?.view || 'search-view', false);
+});
+
+function goBack() {
+  if (current !== 'search-view') history.back();
+}
+
+function goHome() {
+  $('q').value = '';
+  $('f-brand').value = '';
+  $('f-size').value = '';
+  ['f-brand', 'f-size'].forEach((id) => $(id).classList.remove('on'));
+  searchScroll = 0;
+  runSearch();
+  if (current === 'search-view') return window.scrollTo(0, 0);
+  history.go(-depth);       // the popstate that follows shows the search screen
+}
+
+$('nav-back').addEventListener('click', goBack);
+$('nav-home').addEventListener('click', goHome);
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -37,6 +70,9 @@ async function startSession(session) {
   $('logout').hidden = !session;
   $('admin').hidden = true;
   if (!session) return show('login-view');
+  history.replaceState({ view: 'search-view', depth: 0 }, '');
+  depth = 0;
+  current = null;
   show('search-view');      // never wait on the network before showing the app
   loadFilters();
   const { data } = await db.rpc('is_admin');
@@ -176,7 +212,7 @@ $('results').addEventListener('click', (e) => {
   if (btn) openTile(Number(btn.dataset.id));
 });
 
-$('back').addEventListener('click', () => show('search-view'));
+$('back').addEventListener('click', goBack);
 
 async function openTile(id) {
   $('tile').innerHTML = '<p class="muted">Loading…</p>';
@@ -288,7 +324,7 @@ $('pin-form').addEventListener('submit', async (e) => {
   if (!error) $('new-pin').value = '';
 });
 
-$('admin-back').addEventListener('click', () => show('search-view'));
+$('admin-back').addEventListener('click', goBack);
 
 // Calling Supabase inside this callback can hang the login on some phones, so run it just after.
 db.auth.onAuthStateChange((event, session) => {

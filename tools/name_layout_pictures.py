@@ -22,7 +22,7 @@ from load_tiles import key, split_decors  # noqa: E402
 from match_pictures import read, save_pair, slug  # noqa: E402
 
 MAX_COLOUR = 15.0   # average Lab colour difference allowed against the old small picture
-MAX_PAGES = 4       # a name printed on more pages than this is too common to trust
+MAX_PAGES = 8       # a name printed on more pages than this is too common to trust
 
 
 def norm(text):

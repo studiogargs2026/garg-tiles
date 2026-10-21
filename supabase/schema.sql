@@ -234,3 +234,5 @@ $$;
 revoke execute on function public.tile_filters() from anon;
 revoke execute on function public.suggest_tiles(text,text,text) from anon;
 revoke execute on function public.browse_tiles(text,text,text,int,int) from anon;
+-- 2026-10-21: browse_tiles and suggest_tiles also rank names with a word starting with the typed text first
+-- (see migration search_word_start_first): order by lower(t.name) ~ ('\m' || q) desc, ...

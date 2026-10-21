@@ -1,5 +1,5 @@
 // Keeps the app shell on the phone so it opens instantly; tile data always comes fresh.
-const CACHE = 'garg-tiles-v7';
+const CACHE = 'garg-tiles-v8';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))));
