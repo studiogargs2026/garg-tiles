@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from match_pictures import read, save_pair, slug  # noqa: E402
 
 ACCEPT = 0.85
-SCALES = np.geomspace(0.4, 5.0, 28)
 
 
 def norm(text):
@@ -37,26 +36,46 @@ def page_texts(pdf):
     return pdf, [" " + norm(p.get_text()) + " " for p in doc]
 
 
+def best_at(big, small, scales):
+    best = None
+    bh, bw = big.shape[:2]
+    for scale in scales:
+        th, tw = round(small.shape[0] * scale), round(small.shape[1] * scale)
+        if th < 12 or tw < 12 or th > bh or tw > bw:
+            continue
+        tmpl = cv2.resize(small, (tw, th), interpolation=cv2.INTER_AREA)
+        _, score, _, (x, y) = cv2.minMaxLoc(cv2.matchTemplate(big, tmpl, cv2.TM_CCOEFF_NORMED))
+        if best is None or score > best[0]:
+            best = (score, scale, [x, y, x + tw, y + th])
+    return best
+
+
 def search(args):
+    """Rough pass on half-size grey pages to pick page and zoom, then a fine colour pass there."""
     key, small_path, pages = args
     small = read(small_path)
     if small is None:
         return key, None
-    best = None
+    small_grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    rough = None
     for preview in pages:
         big = read(preview)
         if big is None:
             continue
-        bh, bw = big.shape[:2]
-        for scale in SCALES:
-            th, tw = round(small.shape[0] * scale), round(small.shape[1] * scale)
-            if th < 20 or tw < 20 or th > bh or tw > bw:
-                continue
-            tmpl = cv2.resize(small, (tw, th), interpolation=cv2.INTER_AREA)
-            _, score, _, (x, y) = cv2.minMaxLoc(cv2.matchTemplate(big, tmpl, cv2.TM_CCOEFF_NORMED))
-            if best is None or score > best[0]:
-                best = (score, preview, [x, y, x + tw, y + th], bw)
-    return key, best if best and best[0] >= ACCEPT else None
+        half = cv2.resize(cv2.cvtColor(big, cv2.COLOR_BGR2GRAY), None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+        b = best_at(half, small_grey, SCALES / 2)
+        if b and (rough is None or b[0] > rough[0]):
+            rough = (b[0], b[1] * 2, preview, big)
+    if not rough or rough[0] < ACCEPT - 0.15:
+        return key, None
+    _, scale, preview, big = rough
+    fine = best_at(big, small, scale * np.geomspace(0.9, 1.1, 5))
+    if not fine or fine[0] < ACCEPT:
+        return key, None
+    return key, (fine[0], preview, fine[2], big.shape[1])
+
+
+SCALES = np.geomspace(0.4, 5.0, 20)
 
 
 def main(old_dir, work):

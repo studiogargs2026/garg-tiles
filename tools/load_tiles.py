@@ -110,8 +110,32 @@ class Specs:
         return None, None
 
 
+DECOR = re.compile(r"^(decor[^:]*?)\s*(?::|\s-\s)\s*(.*)$", re.I)
+
+
+def split_decors(designs):
+    """A decor printed as a size/finish row ("Decor 04: Matt + Carving") is a different tile
+    with its own picture, so it becomes its own tile named "<tile> Decor 04" (Kirti, 2026-10-21)."""
+    out = []
+    for d in designs:
+        plain, decors = [], defaultdict(list)
+        for o in d["offers"]:
+            m = DECOR.match(o.get("finish") or "")
+            if m:
+                label = " ".join(w.capitalize() if w.islower() else w for w in m.group(1).split())
+                decors[label].append({**o, "finish": m.group(2) or None})
+            else:
+                plain.append(o)
+        if plain or not decors:
+            out.append({**d, "offers": plain})
+        base = re.sub(r"\s+decor$", "", d["name"], flags=re.I)
+        for label, offers in decors.items():
+            out.append({**d, "name": f"{base} {label}", "decor_of": d["name"], "offers": offers})
+    return out
+
+
 def main(tiles_path, work):
-    designs = json.load(open(tiles_path))["designs"]
+    designs = split_decors(json.load(open(tiles_path))["designs"])
     pictures = json.load(open(os.path.join(work, "pictures.json")))
     specs = Specs(designs, work)
     tally = Counter()
@@ -128,7 +152,7 @@ def main(tiles_path, work):
         chunk = tiles[start:start + BATCH]
         rows = []
         for d in chunk:
-            pic = pictures.get(key(d["brand"], d["name"]), {})
+            pic = pictures.get(key(d["brand"], d["name"])) or pictures.get(key(d["brand"], d.get("decor_of", "")), {})
             rows.append({"brand": d["brand"], "name": d["name"], "catalog": d.get("catalog"), "notes": d.get("notes"),
                          "image_path": pic.get("image"), "thumb_path": pic.get("thumb")})
         ids = {key(r["brand"], r["name"]): r["id"] for r in call("rows", rows, table="tiles")["rows"]}
