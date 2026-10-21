@@ -12,7 +12,7 @@ import json
 import os
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 
 import cv2
@@ -60,29 +60,45 @@ def save_pair(img, name, out):
     return max(h, w)
 
 
-def page_search(args):
-    """Look for a small tile picture inside page previews; returns (score, catalog, page, box in points)."""
-    small_path, pages = args
-    small = read(small_path)
-    if small is None:
-        return None
-    best = None
-    for catalog, page, preview, page_size in pages:
-        big = read(preview)
-        if big is None:
+SCALES = np.geomspace(0.5, 4.0, 15)
+
+
+def search_catalog(args):
+    """Look for small tile pictures inside one catalog's page previews.
+    Returns {key: (score, page, box in points)}. After the first sure hit, only scales
+    near it are tried, since one catalog is usually cut at one zoom."""
+    catalog, previews, tiles = args
+    pages = []
+    for page, path, size in previews:
+        img = read(path)
+        if img is not None:
+            pages.append((page, cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), size))
+    hint, found = None, {}
+    for key, small_path in tiles:
+        small = read(small_path)
+        if small is None:
             continue
-        bh, bw = big.shape[:2]
-        for scale in np.geomspace(0.5, 4.0, 14):
+        small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        scales = SCALES if hint is None else SCALES[max(0, hint - 1):hint + 2]
+        best = None
+        for si, scale in enumerate(scales):
             th, tw = round(small.shape[0] * scale), round(small.shape[1] * scale)
-            if th < 24 or tw < 24 or th > bh or tw > bw:
+            if th < 24 or tw < 24:
                 continue
             tmpl = cv2.resize(small, (tw, th), interpolation=cv2.INTER_AREA)
-            res = cv2.matchTemplate(big, tmpl, cv2.TM_CCOEFF_NORMED)
-            _, score, _, (x, y) = cv2.minMaxLoc(res)
-            if best is None or score > best[0]:
-                k = page_size[0] / bw
-                best = (score, catalog, page, [x * k, y * k, (x + tw) * k, (y + th) * k])
-    return best
+            for page, big, size in pages:
+                bh, bw = big.shape
+                if th > bh or tw > bw:
+                    continue
+                _, score, _, (x, y) = cv2.minMaxLoc(cv2.matchTemplate(big, tmpl, cv2.TM_CCOEFF_NORMED))
+                if best is None or score > best[0]:
+                    k = size[0] / bw
+                    best = (score, page, [x * k, y * k, (x + tw) * k, (y + th) * k], list(SCALES).index(scale))
+        if best and best[0] >= PAGE_ACCEPT:
+            found[key] = best[:3]
+            if hint is None and best[0] >= 0.9:
+                hint = best[3]
+    return catalog, found
 
 
 def main(old_dir, tiles_path, work):
@@ -123,6 +139,26 @@ def main(old_dir, tiles_path, work):
                           "src": r["path"]}
         else:
             unmatched.append(k)
+    # Plain tiles look alike across brands: a match must come from a catalog whose other
+    # matches are mostly the same brand, otherwise retry within that brand's catalogs.
+    votes = defaultdict(Counter)
+    for k, v in matches.items():
+        votes[v["catalog"]][k.split("|")[0]] += 1
+    file_brand = {f: c.most_common(1)[0][0] for f, c in votes.items()}
+    cand_brand = np.array([file_brand.get(index[i]["catalog"]) for i in ok], dtype=object)
+    mine_by_key = dict(zip(keys, mine))
+    for k in [k for k, v in matches.items() if file_brand[v["catalog"]] != k.split("|")[0]]:
+        m = mine_by_key[k]
+        sims = C @ m[0]
+        sims[(np.abs(np.log(C_ratio / m[1])) >= 0.2) | (cand_brand != k.split("|")[0])] = -1
+        j = int(sims.argmax())
+        if sims[j] >= ACCEPT:
+            r = index[ok[j]]
+            matches[k] = {"how": "stored", "score": round(float(sims[j]), 3), "catalog": r["catalog"], "page": r["page"],
+                          "src": r["path"]}
+        else:
+            del matches[k]
+            unmatched.append(k)
     print(f"stored pictures: {len(matches)} of {len(keys)} tiles", flush=True)
 
     # Tiles printed inside a bigger page: search the pages of the catalogs that the
@@ -135,23 +171,24 @@ def main(old_dir, tiles_path, work):
         pages_by_file[os.path.basename(os.path.dirname(preview))].append(preview)
     file_slug = {r["catalog"]: os.path.dirname(r["path"]) for r in index}
     page_size = {(r["catalog"], r["page"]): r["page_size"] for r in index}
-    jobs, job_keys = [], []
+    by_file = defaultdict(list)
     for k in unmatched:
-        files = title_files.get(catalog_of.get(k)) or set()
-        pages = []
-        for f in files:
-            for p in pages_by_file.get(file_slug.get(f, ""), []):
-                n = int(re.search(r"page(\d+)", p).group(1))
-                size = page_size.get((f, n)) or next(v for (c, _), v in page_size.items() if c == f)
-                pages.append((f, n, p, size))
-        if pages:
-            jobs.append((old[k]["path"], pages))
-            job_keys.append(k)
+        for f in title_files.get(catalog_of.get(k)) or ():
+            by_file[f].append((k, old[k]["path"]))
+    jobs = []
+    for f, tiles in by_file.items():
+        previews = []
+        for p in pages_by_file.get(file_slug.get(f, ""), []):
+            n = int(re.search(r"page(\d+)", p).group(1))
+            size = page_size.get((f, n)) or next(v for (c, _), v in page_size.items() if c == f)
+            previews.append((n, p, size))
+        jobs.append((f, previews, tiles))
     with ProcessPoolExecutor() as pool:
-        for k, best in zip(job_keys, pool.map(page_search, jobs, chunksize=4)):
-            if best and best[0] >= PAGE_ACCEPT:
-                matches[k] = {"how": "page", "score": round(float(best[0]), 3), "catalog": best[1], "page": best[2],
-                              "box": [round(v, 1) for v in best[3]]}
+        for f, found in pool.map(search_catalog, jobs):
+            for k, (score, page, box) in found.items():
+                if k not in matches or matches[k]["score"] < score:
+                    matches[k] = {"how": "page", "score": round(float(score), 3), "catalog": f, "page": page,
+                                  "box": [round(v, 1) for v in box]}
     print(f"after page search: {len(matches)} of {len(keys)} tiles", flush=True)
 
     # write the pictures
