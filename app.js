@@ -1,4 +1,9 @@
 const { supabaseUrl, supabaseKey } = window.GARG_CONFIG;
+if (!window.supabase) {
+  document.querySelector('main').innerHTML =
+    '<p class="error">The app could not load. Check the internet connection, then close and reopen the app.</p>';
+  throw new Error('supabase-js did not load');
+}
 const db = supabase.createClient(supabaseUrl, supabaseKey);
 const $ = (id) => document.getElementById(id);
 const views = ['login-view', 'search-view', 'tile-view', 'admin-view'];
@@ -209,6 +214,9 @@ $('pin-form').addEventListener('submit', async (e) => {
 
 $('admin-back').addEventListener('click', () => show('search-view'));
 
-db.auth.onAuthStateChange((_event, session) => startSession(session));
+// Calling Supabase inside this callback can hang the login on some phones, so run it just after.
+db.auth.onAuthStateChange((event, session) => {
+  if (['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT'].includes(event)) setTimeout(() => startSession(session), 0);
+});
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
