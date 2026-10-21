@@ -37,10 +37,10 @@ async function startSession(session) {
   $('logout').hidden = !session;
   $('admin').hidden = true;
   if (!session) return show('login-view');
+  show('search-view');      // never wait on the network before showing the app
   const { data } = await db.rpc('is_admin');
   isAdmin = data === true;
   $('admin').hidden = !isAdmin;
-  show('search-view');
 }
 
 let signingUp = false;
