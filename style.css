@@ -115,3 +115,8 @@ label.ghost { color: var(--accent); }
 .nav button { padding: 12px 4px; font-size: .92rem; white-space: nowrap; }
 .nav button span { font-size: 1rem; }
 .best { color: var(--price); }
+.ph-roles { display: flex; gap: 6px; margin: 0 0 10px; }
+.ph-roles button { flex: 1; padding: 10px 4px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font-weight: 600; font-size: .85rem; }
+.ph-roles button.on { border-color: var(--accent); background: #fff1e8; color: var(--accent); }
+.ph-roles button.done::after { content: " ✓"; color: var(--price); }
+#ph-status { font-weight: 600; color: var(--accent-2); }
