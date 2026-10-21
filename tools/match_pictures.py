@@ -210,7 +210,8 @@ def main(old_dir, tiles_path, work, page_search="yes"):
                               "box_px": [round(float(v), 1) for v in box], "preview_w": pw}
     print(f"after page search: {len(matches)} of {len(keys)} tiles", flush=True)
 
-    # write the pictures
+    # write the pictures (the list is saved first so a failure here does not lose the search)
+    json.dump(matches, open(os.path.join(out, "matches.json"), "w"), indent=0)
     docs = {}
     for k, v in sorted(matches.items()):
         name = slug(k.replace("|", " ")) + ".jpg"
@@ -221,7 +222,9 @@ def main(old_dir, tiles_path, work, page_search="yes"):
             doc = docs.get(pdf) or docs.setdefault(pdf, pymupdf.open(pdf))
             page = doc[v["page"] - 1]
             kpt = page.rect.width / v["preview_w"]
-            pix = page.get_pixmap(dpi=300, clip=pymupdf.Rect([c * kpt for c in v["box_px"]]) + page.rect.tl)
+            x0, y0, x1, y1 = (c * kpt for c in v["box_px"])
+            o = page.rect.tl
+            pix = page.get_pixmap(dpi=300, clip=pymupdf.Rect(x0 + o.x, y0 + o.y, x1 + o.x, y1 + o.y))
             img = cv2.imdecode(np.frombuffer(pix.tobytes("jpg"), np.uint8), cv2.IMREAD_COLOR)
         v["px"] = save_pair(img, name, out)
         v["file"] = name
