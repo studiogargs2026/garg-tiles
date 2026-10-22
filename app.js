@@ -42,7 +42,7 @@ function goHome() {
   $('q').value = '';
   $('f-brand').value = '';
   $('f-size').value = '';
-  ['f-brand', 'f-size'].forEach((id) => $(id).classList.remove('on'));
+  ['f-brand', 'f-size'].forEach((id) => { $(id).classList.remove('on'); syncPick(id); });
   searchScroll = 0;
   runSearch();
   if (current === 'search-view') return window.scrollTo(0, 0);
@@ -184,8 +184,68 @@ async function loadFilters() {
   const { data } = await db.rpc('tile_filters');
   if (!data) return;
   $('f-brand').insertAdjacentHTML('beforeend', (data.brands || []).map((b) => `<option>${esc(b)}</option>`).join(''));
-  $('f-size').insertAdjacentHTML('beforeend', (data.sizes || []).map((s) => `<option value="${esc(s)}">${sizeLabel(s)}</option>`).join(''));
+  // Largest size first
+  const area = (s) => s.split('x').reduce((a, v) => a * Number(v), 1);
+  const sizes = (data.sizes || []).slice().sort((a, b) => area(b) - area(a) || Math.max(...b.split('x')) - Math.max(...a.split('x')));
+  $('f-size').insertAdjacentHTML('beforeend', sizes.map((s) => `<option value="${esc(s)}">${sizeLabel(s)}</option>`).join(''));
 }
+
+// Brand and size pickers: tap to open a list with a box to type in. The hidden selects keep the chosen value.
+let pickFor = null;
+const PICK_HINT = { 'f-brand': 'Type brand name', 'f-size': 'Type size, e.g. 600' };
+
+function syncPick(id) {
+  const sel = $(id);
+  $(id + '-btn').textContent = sel.options[sel.selectedIndex]?.text || '';
+  $(id + '-btn').classList.toggle('on', !!sel.value);
+}
+
+function closePick() {
+  $('pick-panel').hidden = true;
+  pickFor = null;
+}
+
+function showPickList() {
+  const sel = $(pickFor);
+  const words = $('pick-q').value.toLowerCase().split(/\s+/).filter(Boolean);
+  const opts = [...sel.options].filter((o, i) => {
+    if (!i) return !words.length;
+    const text = (o.text + ' ' + o.value).toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+  $('pick-list').innerHTML = opts.length
+    ? opts.map((o) => `<li><button type="button" data-v="${esc(o.value)}"${o.value === sel.value ? ' class="on"' : ''}>${esc(o.text)}</button></li>`).join('')
+    : '<li class="muted" style="padding: 10px">Nothing found</li>';
+}
+
+function openPick(id) {
+  if (pickFor === id) return closePick();
+  pickFor = id;
+  $('pick-q').value = '';
+  $('pick-q').placeholder = PICK_HINT[id];
+  showPickList();
+  $('pick-panel').hidden = false;
+  $('pick-q').focus();
+}
+
+['f-brand', 'f-size'].forEach((id) => $(id + '-btn').addEventListener('click', () => openPick(id)));
+$('pick-q').addEventListener('input', showPickList);
+$('pick-q').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('pick-list').querySelector('button')?.click(); }
+  if (e.key === 'Escape') closePick();
+});
+$('pick-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const sel = $(pickFor);
+  closePick();
+  if (sel.value === b.dataset.v) return;
+  sel.value = b.dataset.v;
+  sel.dispatchEvent(new Event('change'));
+});
+document.addEventListener('click', (e) => {
+  if (pickFor && !e.target.closest('#pick-panel, .pick-btn')) closePick();
+});
 
 const PAGE = 40;
 let shownQuery = '';
@@ -226,6 +286,7 @@ $('search-form').addEventListener('submit', (e) => {
 $('more').addEventListener('click', () => runSearch(true));
 ['f-brand', 'f-size'].forEach((id) => $(id).addEventListener('change', () => {
   $(id).classList.toggle('on', !!$(id).value);
+  syncPick(id);
   runSearch();
 }));
 

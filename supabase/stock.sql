@@ -237,7 +237,9 @@ $$;
 -- finishes and sizes that are in stock, for the filters
 create or replace function public.stock_filters() returns jsonb language sql stable security invoker set search_path = public as $$
   select jsonb_build_object(
-    'sizes', (select jsonb_agg(s order by split_part(s,'x',1)::numeric * split_part(s,'x',2)::numeric, s) from (
+    -- biggest size first, like everywhere in the app (Kirti 2026-10-22)
+    'sizes', (select jsonb_agg(s order by split_part(s,'x',1)::numeric * split_part(s,'x',2)::numeric desc,
+                greatest(split_part(s,'x',1)::numeric, split_part(s,'x',2)::numeric) desc, s) from (
        select distinct coalesce(base_size(o.size), l.raw_size) s from stock_lines l left join offers o on o.id = l.offer_id
        where coalesce(base_size(o.size), l.raw_size) ~ '^[0-9.]+x[0-9.]+$') z),
     'finishes', (select jsonb_agg(f order by f) from (

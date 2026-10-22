@@ -31,11 +31,26 @@ main .link { color: var(--accent); font-weight: 500; }
 .suggest button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; background: none;
   color: inherit; text-align: left; }
 .suggest button:active, .suggest button:hover { background: var(--bg); }
-.suggest img, .suggest .dot { width: 36px; height: 36px; flex: none; border-radius: 6px; object-fit: cover; background: var(--line); }
+/* small square picture beside the name, also inside a card (where pictures are otherwise full width) */
+.suggest button img, .suggest button .dot { display: block; width: 40px; height: 40px; aspect-ratio: 1; flex: none; border-radius: 6px; object-fit: cover; background: var(--line); }
+.suggest button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .filters { display: flex; gap: 8px; margin: 10px 0 0; }
 select { flex: 1; min-width: 0; padding: 11px 10px; font: inherit; color: var(--ink); background: var(--card);
   border: 1.5px solid var(--line); border-radius: 12px; }
 select.on { border-color: var(--accent); background: var(--soft); font-weight: 600; }
+.filters { position: relative; }
+.pick-btn { flex: 1; min-width: 0; padding: 11px 10px; font: inherit; color: var(--ink); background: var(--card); text-align: left;
+  border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-btn::after { content: ' ▾'; color: var(--muted); }
+.pick-btn.on { border-color: var(--accent); background: var(--soft); font-weight: 600; }
+.pick-panel { position: absolute; z-index: 3; left: 0; right: 0; top: calc(100% + 4px); padding: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 20px rgba(30, 41, 59, .15); }
+.pick-panel input { margin: 0 0 6px; }
+.pick-panel ul { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+.pick-panel li button { display: block; width: 100%; padding: 11px 10px; border: 0; border-radius: 8px; background: none;
+  color: inherit; font: inherit; text-align: left; }
+.pick-panel li button.on { background: var(--soft); color: var(--accent); font-weight: 600; }
+.pick-panel li button:active { background: var(--bg); }
 .more { display: block; margin: 16px auto; }
 .muted { color: var(--muted); font-size: .9rem; }
 .error { color: var(--error); }
@@ -62,12 +77,12 @@ select { display: block; width: 100%; margin-top: 4px; padding: 12px; font: inhe
 
 /* Back and Home always at the bottom of the screen, within thumb reach */
 main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
-.nav { position: fixed; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; gap: 10px;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--card);
+.nav { position: fixed; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; gap: 6px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--card);
   border-top: 1px solid var(--line); box-shadow: 0 -2px 12px rgba(240, 90, 40, .12); }
-.nav button { flex: 1; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg);
-  color: var(--accent); font-weight: 600; font-size: 1rem; }
-.nav button span { font-size: 1.2rem; }
+.nav button { flex: 1; min-width: 0; padding: 6px 2px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg);
+  color: var(--accent); font-weight: 600; font-size: .72rem; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.nav button span { font-size: 1.25rem; line-height: 1.1; }
 .nav button:disabled { color: var(--muted); opacity: .5; }
 
 /* client selections */
@@ -93,6 +108,29 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .choices { display: grid; gap: 6px; margin: 6px 0; }
 .choice { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: .95rem; margin: 4px 0; }
 .choice input { width: auto; margin: 0; accent-color: var(--accent); }
+.q-card summary { font-weight: 600; cursor: pointer; padding: 4px 0; }
+.q-card summary .muted { font-weight: 400; font-size: .85rem; }
+.q-card[open] summary { margin-bottom: 8px; }
+.q-card h4 { margin: 16px 0 2px; font-size: .95rem; }
+.choices.two { grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.q-line { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.q-line input[type=checkbox] { width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--accent); }
+.q-line input[type=text] { margin: 0; flex: 1; min-width: 0; }
+.q-line.off input[type=text] { color: var(--muted, #999); text-decoration: line-through; }
+.q-default { display: block; width: 100%; margin-top: 10px; }
+.is-selection .q-only { display: none; }
+.qa-card { position: sticky; top: calc(60px + env(safe-area-inset-top)); z-index: 1; overflow: visible; }
+.qa-where { margin: 0 0 6px; font-weight: 600; color: var(--accent); }
+.qa-wrap input { margin: 0; }
+.qa-msg { margin: 6px 0 0; font-size: .85rem; min-height: 1em; }
+.qa-none { padding: 8px 12px; }
+.area.target { border: 2px solid var(--accent); }
+.del-end { display: block; margin: 8px 0 0 auto; padding: 8px 14px; border-color: var(--error); color: var(--error); }
+.del-whole { display: block; width: 100%; margin: 18px 0 6px; border-color: var(--error); color: var(--error); }
+.add-here { margin: 8px 0 2px; font-weight: 600; }
+.own-photo { display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 0; cursor: pointer;
+  font-size: .75rem; color: var(--accent); font-weight: 600; text-align: center; }
+.own-photo img { width: 100%; height: 100%; object-fit: cover; }
 .sel-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 14px 0 6px; }
 .sel-actions button { padding: 12px 6px; }
 .pick-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 14px;
@@ -170,7 +208,8 @@ body[data-showroom="kp"] {
 .review-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .review .suggest-wrap { margin-top: 8px; }
 .review .suggest { position: static; box-shadow: none; margin-top: 6px; }
-.nav { gap: 6px; padding-left: 8px; padding-right: 8px; }
-.nav button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; font-size: .74rem; }
-.nav button span { font-size: 1.15rem; line-height: 1.1; }
+/* six buttons in the bottom bar now (Stock added) */
+.nav { gap: 4px; padding-left: 6px; padding-right: 6px; }
+.nav button { padding: 6px 1px; font-size: .7rem; }
+.nav button span { font-size: 1.2rem; }
 .review .suggest img, .review .suggest .dot { width: 36px; height: 36px; aspect-ratio: auto; display: block; }
