@@ -171,6 +171,10 @@ body[data-showroom="kp"] {
 }
 .bar .brand { display: flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: #fff; font: inherit; font-weight: 700; font-size: 1.15rem; }
 .brand img { height: 34px; width: auto; border-radius: 6px; }
+.brand-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; text-align: left; }
+.brand-text small { font-size: .68rem; font-weight: 500; opacity: .9; letter-spacing: .3px; }
+.app-mark { margin: 6px 0 0; font-size: 1.5rem; color: var(--accent); }
+.app-mark span { font-size: .95rem; color: var(--muted); font-weight: 500; }
 .showrooms { display: grid; gap: 14px; margin-top: 18px; }
 .showroom-pick { display: flex; align-items: center; gap: 16px; width: 100%; padding: 14px; border-radius: 16px; border: 2px solid; background: var(--card);
   font-size: 1.15rem; font-weight: 700; text-align: left; box-shadow: var(--shadow); }

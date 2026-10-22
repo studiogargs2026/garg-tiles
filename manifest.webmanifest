@@ -1,6 +1,6 @@
 {
-  "name": "Master View",
-  "short_name": "Master View",
+  "name": "SalesDesk by Garg",
+  "short_name": "SalesDesk",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
