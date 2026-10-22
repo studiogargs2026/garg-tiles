@@ -260,9 +260,11 @@ document.addEventListener('click', (e) => {
 
 const PAGE = 40;
 let shownQuery = '';
+let searchTurn = 0;   // only the newest search may fill the list (two quick searches showed every tile twice)
 
 async function runSearch(more = false) {
   hideSuggest();
+  const turn = ++searchTurn;
   const q = $('q').value.trim();
   const f = filters();
   if (!more && !q && !f.p_brand && !f.p_size) {
@@ -276,13 +278,17 @@ async function runSearch(more = false) {
   $('status').textContent = 'Searching…';
   $('more').hidden = true;
   const { data, error } = await db.rpc('browse_tiles', { q: shownQuery, ...f, p_offset: lastResults.length, p_limit: PAGE });
+  if (turn !== searchTurn) return;
   if (error) return ($('status').textContent = 'Could not search. Check your internet and try again.');
-  lastResults = lastResults.concat(data);
+  const have = new Set(lastResults.map((t) => t.id));
+  const fresh = data.filter((t) => !have.has(t.id));
+  lastResults = lastResults.concat(fresh);
   const n = lastResults.length;
   $('status').textContent = n ? `${n}${data.length === PAGE ? '+' : ''} tile${n > 1 ? 's' : ''}` : 'No tiles found. Try fewer words or change the filters.';
   $('more').hidden = data.length < PAGE;
-  const urls = await signedUrls(data.map((t) => t.thumb_path));
-  $('results').insertAdjacentHTML('beforeend', data.map((t) => `
+  const urls = await signedUrls(fresh.map((t) => t.thumb_path));
+  if (turn !== searchTurn) return;
+  $('results').insertAdjacentHTML('beforeend', fresh.map((t) => `
     <li class="card"><button data-id="${t.id}">
       ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="" loading="lazy">` : '<div class="thumb-empty"></div>'}
       <div class="info"><div class="name">${esc(t.name)}</div><div class="muted">${esc(t.brand)}</div></div>
