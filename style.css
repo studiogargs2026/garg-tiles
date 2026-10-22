@@ -31,7 +31,9 @@ main .link { color: var(--accent); font-weight: 500; }
 .suggest button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; background: none;
   color: inherit; text-align: left; }
 .suggest button:active, .suggest button:hover { background: var(--bg); }
-.suggest img, .suggest .dot { width: 36px; height: 36px; flex: none; border-radius: 6px; object-fit: cover; background: var(--line); }
+/* small square picture beside the name, also inside a card (where pictures are otherwise full width) */
+.suggest button img, .suggest button .dot { display: block; width: 40px; height: 40px; aspect-ratio: 1; flex: none; border-radius: 6px; object-fit: cover; background: var(--line); }
+.suggest button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .filters { display: flex; gap: 8px; margin: 10px 0 0; }
 select { flex: 1; min-width: 0; padding: 11px 10px; font: inherit; color: var(--ink); background: var(--card);
   border: 1.5px solid var(--line); border-radius: 12px; }
