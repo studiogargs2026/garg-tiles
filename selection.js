@@ -263,6 +263,7 @@ function itemHtml(it, ii) {
         <label class="q-only">Rate ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
       </div>
       <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
+      <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
     </div>`;
   }
   const o = offerOf(it);
@@ -283,6 +284,7 @@ function itemHtml(it, ii) {
       <label class="q-only">Rate ₹/sq ft<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
     </div>
     <div class="muted amount">${chargedBoxSqft(o) ? `${chargedBoxSqft(o)} sq ft per box (charged)` : ''}<span class="q-only">${chargedBoxSqft(o) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
+    <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
   </div>`;
 }
 
