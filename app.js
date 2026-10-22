@@ -440,7 +440,7 @@ $('admin').addEventListener('click', async () => {
 
 async function loadStaff() {
   const { data } = await db.from('allowed_emails').select('*').order('full_name');
-  $('staff-list').innerHTML = (data || []).map((p) => `<li>${esc(p.full_name || '')} · ${esc(p.email)} · ${p.role === 'admin' ? 'Admin' : 'Sales'}
+  $('staff-list').innerHTML = (data || []).map((p) => `<li>${esc(p.full_name || '')} · ${esc(p.email)} · ${p.role === 'admin' ? 'Admin' : 'Sales Executive'}
     <button class="link" data-remove="${esc(p.email)}">Remove</button></li>`).join('');
 }
 
