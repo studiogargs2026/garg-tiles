@@ -211,7 +211,7 @@ function renderSelection() {
   ['sel-q-row', 'sel-total', 'q-card', 'sel-quote'].forEach((id) => ($(id).hidden = !quote));
   $('sel-pdf').hidden = quote;
   $('sel-convert').textContent = quote ? 'Make a selection' : 'Make a quotation';
-  $('sel-delete').textContent = `Delete this ${WORD[kindOf(sel)]}`;
+  $('sel-delete').textContent = `Delete this whole ${WORD[kindOf(sel)]}`;
   $('sel-code-eg').textContent = `${SHOWROOMS[roomOf(sel)].code}-4821`;
   $('sel-client').value = sel.client;
   $('sel-address').value = d.address || '';
@@ -224,7 +224,6 @@ function renderSelection() {
   $('sel-gst-rate-wrap').hidden = (d.gst || 'in') === 'in';
   readyQuote().then(renderQuoteSettings).catch(() => {});
   document.querySelectorAll('[name=sel-names]').forEach((r) => (r.checked = r.value === (d.nameStyle || 'real')));
-  $('sel-delete').hidden = !sel.id;
   showTarget();
   $('sel-areas').innerHTML = d.areas.map((a, ai) => `
     <div class="area card${ai === target ? ' target' : ''}" data-area="${ai}">
@@ -693,7 +692,6 @@ async function saveNow(quiet, auto) {
   if (res.error) { if (!auto) alert('Could not save. Check your internet and try again.'); return false; }
   sel.id = res.data.id;
   keepLocal(current === 'selection-view' || pickArea !== null);
-  $('sel-delete').hidden = false;
   if (!quiet) flash('Saved');
   return true;
 }
@@ -741,11 +739,18 @@ $('sel-convert').addEventListener('click', async () => {
   window.scrollTo(0, 0);
   draftNote(`Made from the ${from}. The ${from} is still saved as it was.`);
 });
+// deletes the whole selection or quotation; one never saved online is only dropped from the phone
 $('sel-delete').addEventListener('click', async () => {
-  if (!confirm(`Delete the selection for ${sel.client}?`)) return;
-  const { error } = await db.from('selections').delete().eq('id', sel.id);
-  if (error) return alert('Only the person who made it, or an admin, can delete it.');
-  if (readDraft()?.sel?.id === sel.id) try { localStorage.removeItem(draftKey()); } catch { /* ignore */ }
+  const what = WORD[kindOf(sel)];
+  if (!confirm(`Delete this whole ${what}${sel.client.trim() ? ` for ${sel.client.trim()}` : ''}? This cannot be undone.`)) return;
+  clearTimeout(autoTimer);
+  await saving;              // a save still running would bring it back
+  if (sel.id) {
+    const { error } = await db.from('selections').delete().eq('id', sel.id);
+    if (error) return alert('Only the person who made it, or an admin, can delete it.');
+  }
+  const d = readDraft();
+  if (d?.sel && (!d.sel.id || d.sel.id === sel.id)) try { localStorage.removeItem(draftKey()); } catch { /* ignore */ }
   sel = null;
   goBack();
   openSelections();
