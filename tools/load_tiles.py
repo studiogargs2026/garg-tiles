@@ -10,7 +10,7 @@ Needs GARG_UPLOAD_TOKEN in the environment (see supabase/functions/admin-upload)
 Pricing: net cost = list rate x (1 - discount %), per sq ft (box rates are divided by the
 sq ft in a box when known). This is the price before insurance and GST. Only admins see it.
 Suggested selling price (Kirti, 2026-10-21) = (net cost + transport) x 1.18 GST x 2 (x 1.5 for
-600x1200 tiles costing under Rs 40/sq ft, x 3 for Itaca 300x600 and 300x300 except Outlook), rounded to whole rupees, where
+600x1200 tiles costing under Rs 40/sq ft, x 3 for Itaca and Italake 300x600 and 300x300 except Itaca Outlook), rounded to whole rupees, where
 transport per sq ft is Rs 12 up to 9 mm thick, Rs 15 above 9 up to 13 mm, Rs 20 above 13 mm,
 and Rs 25 for every Timex tile whatever the thickness.
 """
@@ -74,8 +74,8 @@ SPECIAL_SERIES = re.compile(r"punch|highlight|d[eé]cor|bi mor|cementa|drift|sic
 
 
 def margin(size, net, finish=None, series=None, brand=None):
-    # Itaca 300x600 and 300x300 sell at x3, except the Outlook series (Kirti, 2026-10-22)
-    if brand == "Itaca" and re.match(r"(30x60|60x30|30x30) cm", size or "") and not re.search(r"outlook", series or "", re.I):
+    # Itaca and Italake 300x600 and 300x300 sell at x3, except Itaca's Outlook series (Kirti, 2026-10-22)
+    if brand in ("Itaca", "Italake") and re.match(r"(30x60|60x30|30x30) cm", size or "") and not re.search(r"outlook", series or "", re.I):
         return 3
     basic = (finish or "").strip().lower() in BASIC_FINISHES and not SPECIAL_SERIES.search(series or "")
     return 1.5 if size == "60x120 cm" and net < 40 and basic else 2
