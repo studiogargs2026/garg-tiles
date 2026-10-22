@@ -127,6 +127,11 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .area.target { border: 2px solid var(--accent); }
 .del-end { display: block; margin: 8px 0 0 auto; padding: 8px 14px; border-color: var(--error); color: var(--error); }
 .del-whole { display: block; width: 100%; margin: 18px 0 6px; border-color: var(--error); color: var(--error); }
+.disc-all { align-items: flex-end; }
+.disc-all button { flex: none; margin-bottom: 8px; padding: 12px 14px; }
+.disc-note { margin: -4px 0 10px; font-size: .82rem; }
+.qty-row label.disc { flex: 1; }
+.qty-row > span { flex: 2; }
 .add-here { margin: 8px 0 2px; font-weight: 600; }
 .own-photo { display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 0; cursor: pointer;
   font-size: .75rem; color: var(--accent); font-weight: 600; text-align: center; }

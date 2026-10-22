@@ -122,6 +122,11 @@
           <label>Quote number<input id="sel-quote-no" placeholder="made automatically"></label>
           <label>Labour charges ₹<input id="sel-labour" type="number" inputmode="decimal"></label>
         </div>
+        <div class="qty-row disc-all q-only">
+          <label>Same discount on all items %<input id="sel-disc-all" type="number" inputmode="decimal" placeholder="e.g. 10"></label>
+          <button id="sel-disc-apply" type="button" class="ghost small">Apply to all</button>
+        </div>
+        <p class="muted q-only disc-note">Products added later get it too. You can still change any single item's discount in its own box.</p>
         <label>Notes (printed in both PDFs)<textarea id="sel-notes" rows="3" placeholder="e.g. Skirting in the same tile. Delivery after 10 days."></textarea></label>
         <p id="sel-total" class="price"></p>
       </div>
@@ -162,7 +167,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">App version 23</p>
+      <p class="muted version">App version 24</p>
     </section>
 
     <section id="photo-view" hidden>
