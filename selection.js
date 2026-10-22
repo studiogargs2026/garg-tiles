@@ -93,9 +93,14 @@ function setBoxes(it, boxes) {
   if (box && boxes > 0) it.sqft = Math.round(boxes * box * 100) / 100;
 }
 
+// discount in %, 0 to 100
+function discOf(it) {
+  return Math.min(100, Math.max(0, Number(it.disc) || 0));
+}
+
 function amountOf(it) {
   const qty = it.kind === 'tile' ? Number(it.sqft) : Number(it.qty);
-  return Math.round((qty || 0) * (Number(it.rate) || 0));
+  return Math.round((qty || 0) * (Number(it.rate) || 0) * (1 - discOf(it) / 100));
 }
 
 function money(n) {
@@ -218,6 +223,7 @@ function renderSelection() {
   $('sel-phone').value = d.phone || '';
   $('sel-quote-no').value = sel.quote_no || '';
   $('sel-labour').value = d.labour || '';
+  $('sel-disc-all').value = d.discAll || '';
   $('sel-notes').value = d.notes || '';
   $('sel-gst').value = d.gst || 'in';
   $('sel-gst-rate').value = d.gstRate || 18;
@@ -261,6 +267,7 @@ function itemHtml(it, ii) {
         <label>Unit<select data-f="unit">${UNITS.map((u) => `<option${u === it.unit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
         <label class="q-only">Rate ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
       </div>
+      <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
       <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
       <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
     </div>`;
@@ -282,6 +289,7 @@ function itemHtml(it, ii) {
       <label>Boxes<input data-f="boxes" type="number" inputmode="numeric" value="${esc(it.boxes)}"></label>
       <label class="q-only">Rate ₹/sq ft<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
     </div>
+    <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
     <div class="muted amount">${chargedBoxSqft(o) ? `${chargedBoxSqft(o)} sq ft per box (charged)` : ''}<span class="q-only">${chargedBoxSqft(o) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
     <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
   </div>`;
@@ -321,7 +329,7 @@ $('sel-areas').addEventListener('input', (e) => {
   if (f === 'area-name') a.name = v;
   else if (it && f === 'pdfName') it.pdfName = v;
   else if (it && (f === 'desc' || f === 'size')) it[f] = v;
-  else if (it && (f === 'rate' || f === 'qty')) it[f] = v;
+  else if (it && (f === 'rate' || f === 'qty' || f === 'disc')) it[f] = v;
   else return;
   if (itemEl) itemEl.querySelector('.amount').innerHTML = itemEl.querySelector('.amount').innerHTML.replace(/Amount: ₹[\d,]*/, `Amount: ₹${money(amountOf(it))}`);
   updateTotal();
@@ -353,7 +361,7 @@ $('sel-areas').addEventListener('click', (e) => {
     sel.data.areas.splice(ai, 1);
     if (target >= ai) target = Math.max(0, target - 1);
   } else if (act === 'del-item') a.items.splice(Number(itemEl.dataset.item), 1);
-  else if (act === 'add-other') { target = ai; a.items.push({ kind: 'other', desc: '', role: 'Other', size: '', qty: '', unit: 'Pcs', rate: '', photo: null }); }
+  else if (act === 'add-other') { target = ai; a.items.push({ kind: 'other', desc: '', role: 'Other', size: '', qty: '', unit: 'Pcs', rate: '', photo: null, disc: sel.data.discAll || '' }); }
   else if (act === 'add-tile') { target = ai; return startPicking(ai); }
   else return;
   renderSelection();
@@ -371,6 +379,17 @@ $('sel-add-area').addEventListener('click', () => {
  ['sel-quote-no', (v) => (sel.quote_no = v)], ['sel-labour', (v) => { sel.data.labour = v; updateTotal(); }]]
   .forEach(([id, set]) => $(id).addEventListener('input', (e) => set(e.target.value)));
 $('sel-notes').addEventListener('input', (e) => (sel.data.notes = e.target.value));
+$('sel-disc-apply').addEventListener('click', () => {
+  const v = $('sel-disc-all').value.trim();
+  const d = Math.min(100, Math.max(0, Number(v) || 0));
+  const items = sel.data.areas.flatMap((a) => a.items);
+  if (!items.length) return alert('Add products first.');
+  sel.data.discAll = v;
+  items.forEach((it) => (it.disc = d || ''));
+  renderSelection();
+  changed(true);
+  flash(d ? `${d}% discount put on all ${items.length} items` : 'Discount taken off all items');
+});
 $('sel-gst').addEventListener('change', (e) => { sel.data.gst = e.target.value; $('sel-gst-rate-wrap').hidden = e.target.value === 'in'; });
 $('sel-gst-rate').addEventListener('input', (e) => (sel.data.gstRate = Number(e.target.value) || 18));
 document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener('change', () => { applyNameStyle(r.value); renderSelection(); }));
@@ -381,7 +400,7 @@ document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener(
 // printed under the list (only ticked ones) and the terms. New quotations start from the
 // showroom's usual ones, which admins can change from any quotation.
 const Q_COLS = [['serial', 'Sr. no.'], ['pic', 'Tile picture'], ['size', 'Size'], ['finish', 'Finish'], ['role', 'Used as (wall, floor…)'],
-  ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['amount', 'Amount']];
+  ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['disc', 'Discount'], ['amount', 'Amount']];
 const Q_PARTS = [['dates', 'Date and valid until'], ['areas', 'Area-wise summary'], ['totals', 'Totals and grand total'], ['words', 'Amount in words'],
   ['terms', 'Terms & conditions'], ['bank', 'Bank details'], ['thanks', 'Thank-you line'], ['brands', 'Brand logos strip']];
 const allOn = (list) => Object.fromEntries(list.map(([k]) => [k, true]));
@@ -605,7 +624,7 @@ window.pickTile = async function (id) {
 };
 
 function tileItem(t, offers, role) {
-  const it = { kind: 'tile', ...t, offers: sortOffers(offers), pick: 0, role, sqft: '', boxes: '', code: null };
+  const it = { kind: 'tile', ...t, offers: sortOffers(offers), pick: 0, role, sqft: '', boxes: '', code: null, disc: sel.data.discAll || '' };
   it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || '';
   it.pdfName = sel.data.nameStyle === 'short' ? shortName(it.name) : sel.data.nameStyle === 'code' ? (it.code = newCode()) : it.name;
   return it;
@@ -1082,8 +1101,9 @@ async function quotationPdf() {
 
     // the columns ticked for this quotation; the description takes the room the others leave
     const cols = [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
-      ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['amount', 74, 'AMOUNT']]
-      .filter(([k]) => k === 'desc' || show[k]).map(([k, w, head]) => ({ k, w, head }));
+      ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['disc', 40, 'DISC.'], ['amount', 74, 'AMOUNT']]
+      .filter(([k]) => k === 'desc' || (show[k] ?? true))
+      .filter(([k]) => k !== 'disc' || rows.some((a) => a.items.some((it) => discOf(it)))).map(([k, w, head]) => ({ k, w, head }));
     cols.find((c) => c.k === 'desc').w = W - cols.reduce((s, c) => s + c.w, 0);
     let cx = M;
     for (const c of cols) { c.x = cx; cx += c.w; c.right = cx; }
@@ -1155,8 +1175,11 @@ async function quotationPdf() {
         const o = tile ? offerOf(it) : {};
         const rate = Number(it.rate) || 0;
         const qty = tile ? Number(it.sqft) || 0 : Number(it.qty) || 0;
-        const shown = Math.round(shownRate(rate) * 100) / 100;
-        const amt = Math.round(qty * shown);
+        // with the discount column the rate is before discount; without it, the rate already has it taken off
+        const d = discOf(it);
+        const net = Math.round(shownRate(rate) * (1 - d / 100) * 100) / 100;
+        const shown = col.disc ? Math.round(shownRate(rate) * 100) / 100 : net;
+        const amt = Math.round(qty * net);
         subtotal += amt;
         withGst += amountOf(it);
         pen(doc, 'Poppins', 'bold', 9, C.ink);
@@ -1190,6 +1213,8 @@ async function quotationPdf() {
           doc.text(rs(shown, shown % 1 ? 2 : 0), col.rate.right - 6, mid + (tile ? 0 : 3), { align: 'right' });
           if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', col.rate.right - 6, mid + 9, { align: 'right' }); }
         }
+        pen(doc, 'Poppins', 'normal', 8.8, C.ink);
+        if (col.disc && d) doc.text(`${d}%`, col.disc.right - 6, mid + 3, { align: 'right' });
         pen(doc, 'Poppins', 'bold', 8.8, C.ink);
         if (col.amount && amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
         doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
