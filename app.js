@@ -175,6 +175,19 @@ function sizeLabel(s) {
   return s.split('x').map((v) => Math.round(Number(v) * 10)).join('x') + ' mm';
 }
 
+// Biggest size first everywhere sizes are listed: by area, then the longer side. Works on "60x120" and "120x180 cm".
+function sizeDims(s) {
+  const m = /([\d.]+)\s*x\s*([\d.]+)/i.exec(s || '');
+  return m ? [Number(m[1]), Number(m[2])] : [0, 0];
+}
+function bySizeDesc(a, b) {
+  const [a1, a2] = sizeDims(a), [b1, b2] = sizeDims(b);
+  return b1 * b2 - a1 * a2 || Math.max(b1, b2) - Math.max(a1, a2);
+}
+function sortOffers(offers) {
+  return (offers || []).slice().sort((x, y) => bySizeDesc(x.size, y.size));
+}
+
 function filters() {
   return { p_brand: $('f-brand').value || null, p_size: $('f-size').value || null };
 }
@@ -184,9 +197,7 @@ async function loadFilters() {
   const { data } = await db.rpc('tile_filters');
   if (!data) return;
   $('f-brand').insertAdjacentHTML('beforeend', (data.brands || []).map((b) => `<option>${esc(b)}</option>`).join(''));
-  // Largest size first
-  const area = (s) => s.split('x').reduce((a, v) => a * Number(v), 1);
-  const sizes = (data.sizes || []).slice().sort((a, b) => area(b) - area(a) || Math.max(...b.split('x')) - Math.max(...a.split('x')));
+  const sizes = (data.sizes || []).slice().sort(bySizeDesc);
   $('f-size').insertAdjacentHTML('beforeend', sizes.map((s) => `<option value="${esc(s)}">${sizeLabel(s)}</option>`).join(''));
 }
 
@@ -341,10 +352,11 @@ async function pickOrOpen(id) {
 async function openTile(id) {
   $('tile').innerHTML = '<p class="muted">Loading…</p>';
   show('tile-view');
-  const [{ data: full }, { data: offers }] = await Promise.all([
+  const [{ data: full }, { data: rows }] = await Promise.all([
     db.from('tiles').select('*').eq('id', id).single(),
     db.from('offers').select('*').eq('tile_id', id).order('size'),
   ]);
+  const offers = sortOffers(rows);
   shownTile = { full, offers: offers || [] };
   const costs = isAdmin || costPin ? await lookupCosts(offers || []) : null;
   const urls = await signedUrls([full.image_path]);
