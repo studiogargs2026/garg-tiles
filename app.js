@@ -87,6 +87,7 @@ function useShowroom(id) {
   const room = SHOWROOMS[id];
   document.body.dataset.showroom = id;
   $('brand-name').textContent = room.name;
+  $('brand-by').textContent = 'SalesDesk by Garg';
   $('brand-logo').src = room.logo;
   $('brand-logo').hidden = false;
   document.querySelector('meta[name=theme-color]').content = room.color;
@@ -96,7 +97,8 @@ function forgetShowroom() {
   showroom = null;
   try { localStorage.removeItem(SHOWROOM_KEY); } catch { /* private mode */ }
   delete document.body.dataset.showroom;
-  $('brand-name').textContent = 'Master View';
+  $('brand-name').textContent = 'SalesDesk';
+  $('brand-by').textContent = 'by Garg';
   $('brand-logo').hidden = true;
 }
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Master View</title>
+  <title>SalesDesk</title>
   <meta name="theme-color" content="#f05a28">
   <meta name="color-scheme" content="light">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,12 +12,12 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Master View">
-  <link rel="stylesheet" href="style.css?v=25">
+  <meta name="apple-mobile-web-app-title" content="SalesDesk">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
   <header class="bar">
-    <button id="brand" class="brand" type="button"><img id="brand-logo" alt="" hidden><span id="brand-name">Master View</span></button>
+    <button id="brand" class="brand" type="button"><img id="brand-logo" alt="" hidden><span class="brand-text"><span id="brand-name">SalesDesk</span><small id="brand-by">by Garg</small></span></button>
     <span>
       <button id="admin" class="link" hidden>Admin</button>
       <button id="logout" class="link" hidden>Log out</button>
@@ -26,6 +26,7 @@
 
   <main>
     <section id="login-view" hidden>
+      <p class="app-mark"><b>SalesDesk</b> <span>by Garg</span></p>
       <h1>Sign in</h1>
       <form id="login-form">
         <label>Email <input type="email" name="email" autocomplete="username" required></label>
@@ -167,7 +168,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">App version 25</p>
+      <p class="muted version">SalesDesk by Garg · App version 26</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -227,10 +228,10 @@
   </nav>
 
   <script src="vendor/supabase.js"></script>
-  <script src="config.js?v=25"></script>
-  <script src="app.js?v=25"></script>
+  <script src="config.js?v=26"></script>
+  <script src="app.js?v=26"></script>
   <script src="vendor/jspdf.umd.min.js" defer></script>
-  <script src="selection.js?v=25"></script>
-  <script src="photo.js?v=25"></script>
+  <script src="selection.js?v=26"></script>
+  <script src="photo.js?v=26"></script>
 </body>
 </html>
