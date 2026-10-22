@@ -274,7 +274,7 @@ function itemHtml(it, ii) {
     </div>
     <div class="qty-row">
       <label>Used as<select data-f="role">${ROLES.map((r) => `<option${r === it.role ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
-      <label class="wide">Size<select data-f="pick">${it.offers.map((x, k) => `<option value="${k}"${k === it.pick ? ' selected' : ''}>${esc(x.size || '')}${x.finish ? ' · ' + esc(x.finish) : ''}</option>`).join('')}</select></label>
+      <label class="wide">Size<select data-f="pick">${it.offers.map((x, k) => [x, k]).sort(([x], [y]) => bySizeDesc(x.size, y.size)).map(([x, k]) => `<option value="${k}"${k === it.pick ? ' selected' : ''}>${esc(x.size || '')}${x.finish ? ' · ' + esc(x.finish) : ''}</option>`).join('')}</select></label>
     </div>
     <label>Name in PDF<input data-f="pdfName" value="${esc(it.pdfName)}"></label>
     <div class="qty-row">
@@ -605,7 +605,7 @@ window.pickTile = async function (id) {
 };
 
 function tileItem(t, offers, role) {
-  const it = { kind: 'tile', ...t, offers: offers || [], pick: 0, role, sqft: '', boxes: '', code: null };
+  const it = { kind: 'tile', ...t, offers: sortOffers(offers), pick: 0, role, sqft: '', boxes: '', code: null };
   it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || '';
   it.pdfName = sel.data.nameStyle === 'short' ? shortName(it.name) : sel.data.nameStyle === 'code' ? (it.code = newCode()) : it.name;
   return it;
