@@ -162,7 +162,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">App version 22</p>
+      <p class="muted version">App version 23</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -189,19 +189,19 @@
       <button id="admin-back" class="link">‹ Back</button>
       <h1>Admin</h1>
       <h2>Cost price PIN</h2>
-      <p class="muted">Staff who are not admins type this PIN to see cost price.</p>
+      <p class="muted">Sales Executives who are not admins type this PIN to see cost price.</p>
       <form id="pin-form" class="search">
         <input id="new-pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" placeholder="New PIN (4 to 8 digits)" required>
         <button type="submit" class="primary">Save</button>
       </form>
       <p id="pin-msg" class="muted"></p>
-      <h2>Staff</h2>
+      <h2>Sales Executives</h2>
       <p class="muted">Add someone's email here, then they open the app, tap "First time here?" and choose a password.</p>
       <form id="staff-form">
         <label>Name <input id="staff-name" required></label>
         <label>Email <input id="staff-email" type="email" required></label>
         <label>Role
-          <select id="staff-role"><option value="sales">Sales (no cost price)</option><option value="admin">Admin (sees cost price)</option></select>
+          <select id="staff-role"><option value="sales">Sales Executive (no cost price)</option><option value="admin">Admin (sees cost price)</option></select>
         </label>
         <button type="submit" class="primary">Add</button>
       </form>
