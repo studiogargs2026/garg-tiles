@@ -170,7 +170,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">SalesDesk by Garg · App version 28</p>
+      <p class="muted version">SalesDesk by Garg · App version 29</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -215,6 +215,24 @@
       </form>
       <p id="staff-msg" class="muted"></p>
       <ul id="staff-list" class="plain"></ul>
+      <h2>Bank and contact details</h2>
+      <p class="muted">Printed on each showroom's quotations.</p>
+      <form id="biz-form">
+        <label>Showroom
+          <select id="biz-room"><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option></select>
+        </label>
+        <label>Account holder <input data-bank="title" autocomplete="off"></label>
+        <label>Bank name <input data-bank="name" autocomplete="off"></label>
+        <label>Account number <input data-bank="account" inputmode="numeric" autocomplete="off"></label>
+        <label>IFSC code <input data-bank="ifsc" autocomplete="off"></label>
+        <label>Branch <input data-bank="branch" autocomplete="off"></label>
+        <label>UPI ID <input data-bank="upi" autocomplete="off"></label>
+        <label>GST number <input data-biz="gstin" autocomplete="off"></label>
+        <label>Phone <input data-biz="phone" type="tel" autocomplete="off"></label>
+        <label>Email <input data-biz="email" type="email" autocomplete="off"></label>
+        <button type="submit" class="primary">Save details</button>
+      </form>
+      <p id="biz-msg" class="muted"></p>
       <h2>Locked out</h2>
       <p class="muted">People who typed a wrong PIN 5 times.</p>
       <ul id="locked-list"></ul>

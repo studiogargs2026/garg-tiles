@@ -874,6 +874,12 @@ async function staticData(url) {
 let logos = {};
 let logoData = null;
 let LOGO_RATIO = 1;
+
+// KP Enterprises' logo carries no full name, so its PDFs print the name beside the logo
+function shownName(biz) {
+  const room = SHOWROOMS[roomOf(sel)];
+  return room.printName ? (biz.name || room.name).toUpperCase() : '';
+}
 let fontFiles = null;
 const FONTS = [['Poppins-400.ttf', 'Poppins', 'normal'], ['Poppins-600.ttf', 'Poppins', 'bold'], ['Playfair-700.ttf', 'Playfair', 'bold']];
 
@@ -974,20 +980,23 @@ async function selectionPdf() {
     const PW = 842, PH = 595;
     const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
     const paint = (c) => { doc.setFillColor(...c); doc.rect(0, 0, PW, PH, 'F'); };
+    const name = shownName(biz);
     const page = (title, sub) => {
       doc.addPage();
       paint(C.cream);
       doc.setFillColor(...C.main); doc.rect(0, 0, PW, 66, 'F');
       doc.addImage(logoData, 'JPEG', 30, 7, 52 * LOGO_RATIO, 52);
+      if (name) { pen(doc, 'Poppins', 'bold', 9, C.cream); doc.text(name, 112, 22, { charSpace: 1.2 }); }
       pen(doc, 'Playfair', 'bold', 21, C.accent);
-      doc.text(title, 112, 42, { maxWidth: 520 });
+      doc.text(title, 112, name ? 46 : 42, { maxWidth: 520 });
       if (sub) { pen(doc, 'Poppins', 'normal', 9, C.cream); doc.text(sub, PW - 36, 40, { align: 'right' }); }
     };
     const areas = sel.data.areas.filter((a) => tileItems(a).length);
 
     // cover
     paint(C.main);
-    doc.addImage(logoData, 'JPEG', (PW - 240 * LOGO_RATIO) / 2, 54, 240 * LOGO_RATIO, 240);
+    doc.addImage(logoData, 'JPEG', (PW - 240 * LOGO_RATIO) / 2, name ? 36 : 54, 240 * LOGO_RATIO, 240);
+    if (name) { pen(doc, 'Playfair', 'bold', 22, C.cream); doc.text(name, PW / 2, 306, { align: 'center', charSpace: 1.5 }); }
     doc.setDrawColor(...C.accent); doc.setLineWidth(0.8); doc.line(PW / 2 - 50, 322, PW / 2 + 50, 322);
     pen(doc, 'Playfair', 'bold', 30, C.accent);
     doc.text('Tile Selection', PW / 2, 365, { align: 'center' });
@@ -1079,7 +1088,8 @@ async function selectionPdf() {
     // closing page
     doc.addPage();
     paint(C.main);
-    doc.addImage(logoData, 'JPEG', (PW - 170 * LOGO_RATIO) / 2, 80, 170 * LOGO_RATIO, 170);
+    doc.addImage(logoData, 'JPEG', (PW - 170 * LOGO_RATIO) / 2, name ? 60 : 80, 170 * LOGO_RATIO, 170);
+    if (name) { pen(doc, 'Playfair', 'bold', 18, C.cream); doc.text(name, PW / 2, 262, { align: 'center', charSpace: 1.5 }); }
     pen(doc, 'Playfair', 'bold', 30, C.accent);
     doc.text('Thank You', PW / 2, 312, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 10, C.cream);
@@ -1167,6 +1177,8 @@ async function quotationPdf() {
     // letterhead
     doc.setFillColor(...C.main); doc.rect(0, 0, PW, 122, 'F');
     doc.addImage(logoData, 'JPEG', M - 8, 10, 102 * LOGO_RATIO, 102);
+    const name = shownName(biz);
+    if (name) { pen(doc, 'Playfair', 'bold', 17, C.cream); doc.text(name, M + 102 * LOGO_RATIO, 50, { charSpace: 1 }); }
     pen(doc, 'Playfair', 'bold', 26, C.accent);
     doc.text((q.title || '').trim() || 'QUOTATION', R, 46, { align: 'right', charSpace: 1, maxWidth: W - 110 * LOGO_RATIO });
     pen(doc, 'Poppins', 'normal', 8, C.cream);
