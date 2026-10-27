@@ -127,11 +127,25 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .area.target { border: 2px solid var(--accent); }
 .del-end { display: block; margin: 8px 0 0 auto; padding: 8px 14px; border-color: var(--error); color: var(--error); }
 .del-whole { display: block; width: 100%; margin: 18px 0 6px; border-color: var(--error); color: var(--error); }
+.disc-all { align-items: flex-end; }
+.disc-all button { flex: none; margin-bottom: 8px; padding: 12px 14px; }
+.disc-note { margin: -4px 0 10px; font-size: .82rem; }
+.qty-row label.disc { flex: 1; }
+.fit-prices h4 { margin: 14px 0 6px; }
+.fit-brand { border-top: 1px solid var(--line, #eee); padding-top: 8px; margin-bottom: 6px; }
+.fit-brand p { margin: 0 0 6px; }
+.fit-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.fit-btns button.on { background: var(--accent, #f08a5d); color: #fff; }
+.fit-note { font-size: .82rem; margin: 2px 0 6px; }
+.suggest .fit-code { font-size: .8rem; }
+.qty-row > span { flex: 2; }
+.qty-row > .pcs-note { align-self: center; font-size: 13px; }
+.sel-search { margin: 12px 0 0; }
 .add-here { margin: 8px 0 2px; font-weight: 600; }
 .own-photo { display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 0; cursor: pointer;
   font-size: .75rem; color: var(--accent); font-weight: 600; text-align: center; }
 .own-photo img { width: 100%; height: 100%; object-fit: cover; }
-.sel-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 14px 0 6px; }
+.sel-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 6px; }
 .sel-actions button { padding: 12px 6px; }
 .pick-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 14px;
   border-radius: 12px; background: var(--soft); border: 1.5px solid var(--accent); font-weight: 600; }
@@ -166,6 +180,10 @@ body[data-showroom="kp"] {
 }
 .bar .brand { display: flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: #fff; font: inherit; font-weight: 700; font-size: 1.15rem; }
 .brand img { height: 34px; width: auto; border-radius: 6px; }
+.brand-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; text-align: left; }
+.brand-text small { font-size: .68rem; font-weight: 500; opacity: .9; letter-spacing: .3px; }
+.app-mark { margin: 6px 0 0; font-size: 1.5rem; color: var(--accent); }
+.app-mark span { font-size: .95rem; color: var(--muted); font-weight: 500; }
 .showrooms { display: grid; gap: 14px; margin-top: 18px; }
 .showroom-pick { display: flex; align-items: center; gap: 16px; width: 100%; padding: 14px; border-radius: 16px; border: 2px solid; background: var(--card);
   font-size: 1.15rem; font-weight: 700; text-align: left; box-shadow: var(--shadow); }
@@ -184,6 +202,16 @@ body[data-showroom="kp"] {
 .room-tag { display: inline-block; padding: 1px 7px; margin-left: 6px; border-radius: 8px; font-size: .72rem; font-weight: 700; color: #fff; vertical-align: middle; }
 .room-tag.gs { background: #52011c; }
 .room-tag.kp { background: #21688a; }
+
+/* Garg & Sons: gold and black, from its logo */
+body[data-showroom="gsn"] {
+  --bg: #faf7f0; --line: #ece3cf; --accent: #b8902f; --accent-2: #1c1c1c; --soft: #f6efdc;
+  --shadow: 0 2px 10px rgba(28, 28, 28, .10); --glow: rgba(184, 144, 47, .2);
+}
+.showroom-pick.gsn { border-color: #1c1c1c; color: #1c1c1c; }
+.showroom-pick.gsn img { background: #000; }
+.room-tag.gsn { background: #1c1c1c; color: #e3c06a; }
+.fit-hero { background: #fff; }
 
 /* daily stock */
 .plain-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 10px; }

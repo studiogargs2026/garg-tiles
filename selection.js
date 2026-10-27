@@ -76,8 +76,28 @@ function lineText(it) {
 
 // ---------- quantities ----------
 
+// Pieces in a box for sizes where every brand in the price lists packs the same.
+// Used only when the price list gives no packing for a tile; the person can change it.
+const USUAL_PCS = { '120x240': 1, '80x240': 1, '80x300': 1, '120x180': 2, '80x160': 2, '60x120': 2, '60x60': 4 };
+
+function packingKnown(it) {
+  return !!chargedBoxSqft(offerOf(it));
+}
+
+function pcsOf(it) {
+  if (it.pcs !== undefined && it.pcs !== '') return Number(it.pcs) || 0;
+  const m = /([\d.]+)x([\d.]+)/.exec(offerOf(it).size || '');
+  return m ? USUAL_PCS[`${Math.round(m[1])}x${Math.round(m[2])}`] || 0 : 0;
+}
+
+// charged sq ft in one box: from the price list, else from the pieces typed on the item
+function boxSqftOf(it) {
+  const o = offerOf(it);
+  return chargedBoxSqft(o) || (pcsOf(it) ? chargedBoxSqft({ size: o.size, packing: `${pcsOf(it)} pcs` }) : null);
+}
+
 function setSqft(it, sqft) {
-  const box = chargedBoxSqft(offerOf(it)) || 0;
+  const box = boxSqftOf(it) || 0;
   if (box && sqft > 0) {
     it.boxes = Math.ceil(sqft / box - 1e-9);
     it.sqft = Math.round(it.boxes * box * 100) / 100;
@@ -88,15 +108,60 @@ function setSqft(it, sqft) {
 }
 
 function setBoxes(it, boxes) {
-  const box = chargedBoxSqft(offerOf(it)) || 0;
+  const box = boxSqftOf(it) || 0;
   it.boxes = boxes || '';
   if (box && boxes > 0) it.sqft = Math.round(boxes * box * 100) / 100;
 }
 
+// discount in %, 0 to 100
+function discOf(it) {
+  return Math.min(100, Math.max(0, Number(it.disc) || 0));
+}
+
 function amountOf(it) {
   const qty = it.kind === 'tile' ? Number(it.sqft) : Number(it.qty);
-  return Math.round((qty || 0) * (Number(it.rate) || 0));
+  return Math.round((qty || 0) * (Number(it.rate) || 0) * (1 - discOf(it) / 100));
 }
+
+// ---------- bathroom fittings ----------
+
+// Fittings are priced per piece at MRP. Kohler's CLP and HVR are each product's own discount on
+// MRP. Jaquar can instead be discounted on NRP: the quotation still shows only MRP and the
+// discount on MRP that gives the same net rate (MRP 100, NRP 90, 10% on NRP -> net 81 -> 19%).
+function fitItem(f) {
+  const it = { kind: 'fit', fid: f.id, brand: f.brand, code: f.code, name: f.name, pdfName: f.name, role: 'Fitting',
+    category: f.category, thumb_path: f.thumb_path, image_path: f.image_path, qty: 1, unit: 'Pcs', rate: Number(f.mrp) || '',
+    nrp: f.nrp == null ? null : Number(f.nrp), clp: f.clp_pct == null ? null : Number(f.clp_pct),
+    hvr: f.hvr_pct == null ? null : Number(f.hvr_pct), base: 'mrp', disc: '', nrpDisc: '' };
+  setDisc(it, sel.data.discAll || '');
+  return it;
+}
+
+// the discount typed for an item: on NRP for a Jaquar fitting priced on NRP, otherwise on the rate
+function setDisc(it, v) {
+  if (it.kind === 'fit' && it.base === 'nrp') { it.nrpDisc = v; it.disc = nrpDisc(it); } else it.disc = v;
+}
+
+function nrpDisc(it) {
+  const mrp = Number(it.rate) || 0, nrp = Number(it.nrp) || mrp;
+  if (!mrp) return '';
+  const net = nrp * (1 - Math.min(100, Math.max(0, Number(it.nrpDisc) || 0)) / 100);
+  const d = (1 - net / mrp) * 100;
+  return d > 0.005 ? d : '';
+}
+
+// 19.0000001 -> "19%", 25.456 -> "25.46%"
+function pct(d) {
+  return `${Math.round(Number(d) * 100) / 100}%`;
+}
+
+function fitNote(it) {
+  const net = Math.round((Number(it.rate) || 0) * (1 - discOf(it) / 100) * 100) / 100;
+  if (it.base === 'nrp') return `Quotation shows MRP ₹${money(it.rate)}, discount ${pct(discOf(it))}, net ₹${money(net)} each`;
+  return discOf(it) ? `Net ₹${money(net)} each` : '';
+}
+
+const isFit = (it) => it.kind === 'fit';
 
 function money(n) {
   return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
@@ -105,6 +170,7 @@ function money(n) {
 // ---------- list of selections ----------
 
 async function openSelections(kind = listKind) {
+  if (kind !== listKind) $('sel-search').value = '';
   listKind = kind;
   if (current === 'selection-view') leftSelection();
   show('selections-view');
@@ -118,7 +184,7 @@ async function openSelections(kind = listKind) {
   $('sel-admin').hidden = !isAdmin;
   // the database only gives each person their own; admins get everyone's
   const [{ data, error }, people] = await Promise.all([
-    db.from('selections').select('id, client, quote_no, updated_at, showroom, created_by, total, kind:data->>kind').order('updated_at', { ascending: false }).limit(1000),
+    db.from('selections').select('id, client, quote_no, updated_at, showroom, created_by, total, kind:data->>kind, phone:data->>phone').order('updated_at', { ascending: false }).limit(1000),
     isAdmin ? staffNames() : {},
   ]);
   if (error) return ($('sel-list').innerHTML = '<li class="error">Could not load. Check your internet.</li>');
@@ -147,13 +213,15 @@ function showSelectionList() {
   const room = isAdmin ? $('sel-f-room').value : '';
   const person = isAdmin ? $('sel-f-person').value : '';
   const mine = allSelections.filter((s) => (!room || roomOf(s) === room) && (!person || s.created_by === person));
-  const rows = mine.filter((s) => kindOf(s) === listKind);
+  const words = $('sel-search').value.toLowerCase().split(/\s+/).filter(Boolean);
+  const found = (s) => { const text = [s.client, s.quote_no, s.phone].join(' ').toLowerCase(); return words.every((w) => text.includes(w)); };
+  const rows = mine.filter((s) => kindOf(s) === listKind && found(s));
   if (isAdmin) summary(mine);
   const tag = (s) => `<span class="room-tag ${roomOf(s)}">${SHOWROOMS[roomOf(s)].code}</span>`;
   $('sel-list').innerHTML = rows.length ? rows.map((s) => `<li class="card sel-row"><button data-sel="${s.id}">
       <span><b>${esc(s.client)}</b>${isAdmin ? tag(s) : ''}${isAdmin ? `<span class="who">by ${esc(staff[s.created_by] || 'Unknown')}</span>` : ''}</span>
       <span class="muted">${s.quote_no ? 'Quote ' + esc(s.quote_no) + ' · ' : ''}${s.total && listKind === 'quotation' ? '₹' + money(s.total) + ' · ' : ''}${new Date(s.updated_at).toLocaleDateString('en-IN')}</span>
-    </button></li>`).join('') : `<li class="muted">${allSelections.some((s) => kindOf(s) === listKind) ? 'Nothing matches these filters.' : `No ${listKind}s yet. Tap "New ${listKind}" to start one.`}</li>`;
+    </button></li>`).join('') : `<li class="muted">${allSelections.some((s) => kindOf(s) === listKind) ? (words.length ? 'No client matches this search.' : 'Nothing matches these filters.') : `No ${listKind}s yet. Tap "New ${listKind}" to start one.`}</li>`;
 }
 
 // admin: how many selections and quotations each person made, and the value quoted
@@ -171,6 +239,7 @@ function summary(rows) {
     + (Object.keys(by).length > 1 ? line('Total', all, 'all') : '');
 }
 
+$('sel-search').addEventListener('input', showSelectionList);
 ['sel-f-room', 'sel-f-person'].forEach((id) => $(id).addEventListener('change', showSelectionList));
 
 $('nav-sel').addEventListener('click', () => openSelections('selection'));
@@ -218,6 +287,7 @@ function renderSelection() {
   $('sel-phone').value = d.phone || '';
   $('sel-quote-no').value = sel.quote_no || '';
   $('sel-labour').value = d.labour || '';
+  $('sel-disc-all').value = d.discAll || '';
   $('sel-notes').value = d.notes || '';
   $('sel-gst').value = d.gst || 'in';
   $('sel-gst-rate').value = d.gstRate || 18;
@@ -238,12 +308,40 @@ function renderSelection() {
         <button type="button" class="ghost small" data-act="add-other">+ Product not in the app</button>
       </div>
     </div>`).join('') || '<p class="muted">Add the first area, like "Master Washroom".</p>';
+  const fits = d.areas.flatMap((a) => a.items).filter(isFit);
+  $('fit-prices').hidden = !fits.length;
+  $('fit-kohler').hidden = !fits.some((it) => it.clp != null || it.hvr != null);
+  $('fit-jaquar').hidden = !fits.some((it) => it.nrp);
   refreshThumbs();
   updateTotal();
   keepLocal(true);
 }
 
 function itemHtml(it, ii) {
+  if (isFit(it)) {
+    const onNrp = it.base === 'nrp';
+    return `<div class="item fit" data-item="${ii}">
+      <div class="item-top">
+        <img class="sel-thumb" data-thumb="${esc(it.thumb_path || '')}" alt="">
+        <div class="grow"><b>${esc(it.name)}</b><div class="muted">${esc(it.brand)} · ${esc(it.code)}</div></div>
+        <button type="button" class="link danger" data-act="del-item">Remove</button>
+      </div>
+      <label>Name in PDF<input data-f="pdfName" value="${esc(it.pdfName)}"></label>
+      <div class="qty-row">
+        <label>Qty<input data-f="qty" type="number" inputmode="decimal" value="${esc(it.qty)}"></label>
+        <label>Unit<select data-f="unit">${UNITS.map((u) => `<option${u === it.unit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
+        <label class="q-only">MRP ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
+      </div>
+      <div class="qty-row q-only">
+        ${it.nrp ? `<label>Discount on<select data-f="base"><option value="mrp"${onNrp ? '' : ' selected'}>MRP</option><option value="nrp"${onNrp ? ' selected' : ''}>NRP ₹${money(it.nrp)}</option></select></label>` : ''}
+        <label class="disc">Discount %<input data-f="${onNrp ? 'nrpDisc' : 'disc'}" type="number" inputmode="decimal" value="${esc(onNrp ? it.nrpDisc ?? '' : it.disc ?? '')}" placeholder="0"></label>
+      </div>
+      ${it.clp != null || it.hvr != null ? `<div class="fit-btns q-only">${it.clp != null ? `<button type="button" class="ghost small" data-act="fit-clp">CLP ${pct(it.clp)}</button>` : ''}${it.hvr != null ? `<button type="button" class="ghost small" data-act="fit-hvr">HVR ${pct(it.hvr)}</button>` : ''}</div>` : ''}
+      <p class="muted fit-note q-only">${fitNote(it)}</p>
+      <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
+      <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
+    </div>`;
+  }
   if (it.kind === 'other') {
     return `<div class="item other" data-item="${ii}">
       <div class="item-top">
@@ -261,11 +359,11 @@ function itemHtml(it, ii) {
         <label>Unit<select data-f="unit">${UNITS.map((u) => `<option${u === it.unit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
         <label class="q-only">Rate ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
       </div>
+      <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
       <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
       <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
     </div>`;
   }
-  const o = offerOf(it);
   return `<div class="item" data-item="${ii}">
     <div class="item-top">
       <img class="sel-thumb" data-thumb="${esc(it.thumb_path || '')}" alt="">
@@ -274,7 +372,7 @@ function itemHtml(it, ii) {
     </div>
     <div class="qty-row">
       <label>Used as<select data-f="role">${ROLES.map((r) => `<option${r === it.role ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
-      <label class="wide">Size<select data-f="pick">${it.offers.map((x, k) => `<option value="${k}"${k === it.pick ? ' selected' : ''}>${esc(x.size || '')}${x.finish ? ' · ' + esc(x.finish) : ''}</option>`).join('')}</select></label>
+      <label class="wide">Size<select data-f="pick">${it.offers.map((x, k) => [x, k]).sort(([x], [y]) => bySizeDesc(x.size, y.size)).map(([x, k]) => `<option value="${k}"${k === it.pick ? ' selected' : ''}>${esc(x.size || '')}${x.finish ? ' · ' + esc(x.finish) : ''}</option>`).join('')}</select></label>
     </div>
     <label>Name in PDF<input data-f="pdfName" value="${esc(it.pdfName)}"></label>
     <div class="qty-row">
@@ -282,7 +380,9 @@ function itemHtml(it, ii) {
       <label>Boxes<input data-f="boxes" type="number" inputmode="numeric" value="${esc(it.boxes)}"></label>
       <label class="q-only">Rate ₹/sq ft<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
     </div>
-    <div class="muted amount">${chargedBoxSqft(o) ? `${chargedBoxSqft(o)} sq ft per box (charged)` : ''}<span class="q-only">${chargedBoxSqft(o) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
+    <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
+    ${packingKnown(it) ? '' : `<div class="qty-row"><label>Pieces in 1 box<input data-f="pcs" type="number" inputmode="numeric" value="${esc(pcsOf(it) || '')}"></label><span class="muted pcs-note">Not in the price list, please check with the box</span></div>`}
+    <div class="muted amount">${boxSqftOf(it) ? `${boxSqftOf(it)} sq ft per box (charged)` : ''}<span class="q-only">${boxSqftOf(it) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
     <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
   </div>`;
 }
@@ -321,8 +421,10 @@ $('sel-areas').addEventListener('input', (e) => {
   if (f === 'area-name') a.name = v;
   else if (it && f === 'pdfName') it.pdfName = v;
   else if (it && (f === 'desc' || f === 'size')) it[f] = v;
-  else if (it && (f === 'rate' || f === 'qty')) it[f] = v;
+  else if (it && (f === 'rate' || f === 'qty' || f === 'disc')) { it[f] = v; if (f === 'rate' && it.base === 'nrp') it.disc = nrpDisc(it); }
+  else if (it && f === 'nrpDisc') setDisc(it, v);
   else return;
+  if (it && isFit(it)) itemEl.querySelector('.fit-note').textContent = fitNote(it);
   if (itemEl) itemEl.querySelector('.amount').innerHTML = itemEl.querySelector('.amount').innerHTML.replace(/Amount: ₹[\d,]*/, `Amount: ₹${money(amountOf(it))}`);
   updateTotal();
 });
@@ -334,13 +436,22 @@ $('sel-areas').addEventListener('change', (e) => {
   const v = e.target.value;
   if (f === 'photo') return addPhoto(it, e.target.files[0]);
   if (f === 'role' || f === 'unit') it[f] = v;
-  else if (f === 'pick') {
+  else if (f === 'base') {
+    const typed = it.base === 'nrp' ? it.nrpDisc : it.disc;     // the number typed carries over
+    it.base = v;
+    setDisc(it, typed);
+  } else if (f === 'pick') {
     it.pick = Number(v);
+    delete it.pcs;            // a new size has its own packing
     it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || it.rate;
     if (it.sqft) setSqft(it, Number(it.sqft));
   } else if (f === 'sqft') setSqft(it, Number(v));
   else if (f === 'boxes') setBoxes(it, Number(v));
-  else return;
+  else if (f === 'pcs') {
+    it.pcs = v;
+    if (it.boxes) setBoxes(it, Number(it.boxes));
+    else if (it.sqft) setSqft(it, Number(it.sqft));
+  } else return;
   renderSelection();
 });
 
@@ -353,8 +464,13 @@ $('sel-areas').addEventListener('click', (e) => {
     sel.data.areas.splice(ai, 1);
     if (target >= ai) target = Math.max(0, target - 1);
   } else if (act === 'del-item') a.items.splice(Number(itemEl.dataset.item), 1);
-  else if (act === 'add-other') { target = ai; a.items.push({ kind: 'other', desc: '', role: 'Other', size: '', qty: '', unit: 'Pcs', rate: '', photo: null }); }
+  else if (act === 'add-other') { target = ai; a.items.push({ kind: 'other', desc: '', role: 'Other', size: '', qty: '', unit: 'Pcs', rate: '', photo: null, disc: sel.data.discAll || '' }); }
   else if (act === 'add-tile') { target = ai; return startPicking(ai); }
+  else if (act === 'fit-clp' || act === 'fit-hvr') {
+    const it = a.items[Number(itemEl.dataset.item)];
+    it.base = 'mrp';
+    it.disc = act === 'fit-clp' ? it.clp : it.hvr;
+  }
   else return;
   renderSelection();
 });
@@ -371,6 +487,38 @@ $('sel-add-area').addEventListener('click', () => {
  ['sel-quote-no', (v) => (sel.quote_no = v)], ['sel-labour', (v) => { sel.data.labour = v; updateTotal(); }]]
   .forEach(([id, set]) => $(id).addEventListener('input', (e) => set(e.target.value)));
 $('sel-notes').addEventListener('input', (e) => (sel.data.notes = e.target.value));
+$('sel-disc-apply').addEventListener('click', () => {
+  const v = $('sel-disc-all').value.trim();
+  const d = Math.min(100, Math.max(0, Number(v) || 0));
+  const items = sel.data.areas.flatMap((a) => a.items);
+  if (!items.length) return alert('Add products first.');
+  sel.data.discAll = v;
+  items.forEach((it) => setDisc(it, d || ''));
+  renderSelection();
+  changed(true);
+  flash(d ? `${d}% discount put on all ${items.length} items` : 'Discount taken off all items');
+});
+// one tap for all of a brand's fittings: Kohler's own CLP or HVR discount, or Jaquar on MRP or NRP
+$('fit-prices').addEventListener('click', (e) => {
+  const how = e.target.dataset.fit;
+  if (!how) return;
+  const items = sel.data.areas.flatMap((a) => a.items).filter((it) => isFit(it) && (it.clp != null || it.hvr != null));
+  items.forEach((it) => { it.base = 'mrp'; it.disc = how === 'none' ? '' : (it[how] ?? it.clp ?? ''); });
+  renderSelection();
+  changed(true);
+  const missing = how === 'hvr' ? items.filter((it) => it.hvr == null).length : 0;
+  flash(how === 'none' ? 'Discount taken off the Kohler fittings'
+    : `${how.toUpperCase()} discount put on ${items.length} Kohler fittings${missing ? ` (${missing} have no HVR, they got CLP)` : ''}`);
+});
+$('fit-jq-apply').addEventListener('click', () => {
+  const base = $('fit-jq-base').value;
+  const v = Math.min(100, Math.max(0, Number($('fit-jq-disc').value) || 0)) || '';
+  const items = sel.data.areas.flatMap((a) => a.items).filter((it) => isFit(it) && it.nrp);
+  items.forEach((it) => { it.base = base; setDisc(it, v); });
+  renderSelection();
+  changed(true);
+  flash(`${v || 0}% on ${base.toUpperCase()} put on ${items.length} Jaquar fittings`);
+});
 $('sel-gst').addEventListener('change', (e) => { sel.data.gst = e.target.value; $('sel-gst-rate-wrap').hidden = e.target.value === 'in'; });
 $('sel-gst-rate').addEventListener('input', (e) => (sel.data.gstRate = Number(e.target.value) || 18));
 document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener('change', () => { applyNameStyle(r.value); renderSelection(); }));
@@ -381,7 +529,7 @@ document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener(
 // printed under the list (only ticked ones) and the terms. New quotations start from the
 // showroom's usual ones, which admins can change from any quotation.
 const Q_COLS = [['serial', 'Sr. no.'], ['pic', 'Tile picture'], ['size', 'Size'], ['finish', 'Finish'], ['role', 'Used as (wall, floor…)'],
-  ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['amount', 'Amount']];
+  ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['disc', 'Discount'], ['amount', 'Amount']];
 const Q_PARTS = [['dates', 'Date and valid until'], ['areas', 'Area-wise summary'], ['totals', 'Totals and grand total'], ['words', 'Amount in words'],
   ['terms', 'Terms & conditions'], ['bank', 'Bank details'], ['thanks', 'Thank-you line'], ['brands', 'Brand logos strip']];
 const allOn = (list) => Object.fromEntries(list.map(([k]) => [k, true]));
@@ -419,7 +567,7 @@ function renderQuoteSettings() {
   $('q-valid').value = q.validDays;
   $('q-valid-wrap').hidden = !q.parts.dates;
   $('q-cols').innerHTML = Q_COLS.map((c) => box('col', c)).join('');
-  $('q-parts').innerHTML = Q_PARTS.filter(([k]) => k !== 'brands' || roomOf(sel) === 'gs').map((c) => box('part', c)).join('');
+  $('q-parts').innerHTML = Q_PARTS.filter(([k]) => k !== 'brands' || SHOWROOMS[roomOf(sel)].brands).map((c) => box('part', c)).join('');
   $('q-lines').innerHTML = q.lines.map((l, i) => `<div class="q-line${l.on ? '' : ' off'}" data-line="${i}">
       <input type="checkbox" data-f="on"${l.on ? ' checked' : ''} aria-label="Print this line">
       <input type="text" data-f="text" value="${esc(l.text)}" placeholder="e.g. Loading and unloading extra">
@@ -516,26 +664,39 @@ $('qa-q').addEventListener('input', () => {
   if (!q) return hideQuick();
   qaTimer = setTimeout(async () => {
     const turn = ++qaTurn;
-    const { data } = await db.rpc('suggest_tiles', { q, p_brand: null, p_size: null });
+    const [{ data: tiles }, { data: fits }] = await Promise.all([
+      db.rpc('suggest_tiles', { q, p_brand: null, p_size: null }),
+      db.rpc('suggest_fittings', { q }),
+    ]);
     if (turn !== qaTurn) return;
-    if (!data?.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
+    const data = [...(tiles || []), ...(fits || []).map((f) => ({ ...f, fit: true }))];
+    if (!data.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
     const urls = await signedUrls(data.map((t) => t.thumb_path));
     if (turn !== qaTurn) return;
-    $('qa-list').innerHTML = data.map((t) => `<li><button type="button" data-id="${t.id}">
+    $('qa-list').innerHTML = data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
       ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
-      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}</span></span></button></li>`).join('');
+      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ` · <span class="fit-code">${esc(t.code)} · MRP ₹${money(t.mrp)}</span>` : ''}</span></span></button></li>`).join('');
     $('qa-list').hidden = false;
   }, 200);
 });
 
 $('qa-list').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-id]');
+  const btn = e.target.closest('button[data-id], button[data-fit]');
   if (!btn) return;
   hideQuick();
   $('qa-q').value = '';
   $('qa-q').focus();
   if (!sel.data.areas.length) { sel.data.areas.push({ name: '', items: [] }); target = 0; }
   const area = sel.data.areas[target];
+  if (btn.dataset.fit) {
+    const { data: f } = await db.from('fittings').select('*').eq('id', Number(btn.dataset.fit)).single();
+    if (!f) return alert('Could not add it. Check your internet.');
+    area.items.push(fitItem(f));
+    renderSelection();
+    changed(true);
+    $('qa-msg').textContent = `Added ${f.brand} ${f.code} to ${area.name || `Area ${target + 1}`}`;
+    return;
+  }
   const id = Number(btn.dataset.id);
   const [{ data: t }, { data: offers }] = await Promise.all([
     db.from('tiles').select('id, brand, name, image_path, thumb_path').eq('id', id).single(),
@@ -604,8 +765,21 @@ window.pickTile = async function (id) {
   return true;
 };
 
+// the same for a bathroom fitting tapped on the search screen
+window.pickFit = async function (id) {
+  if (pickArea === null || current !== 'search-view') return false;
+  const area = sel.data.areas[pickArea];
+  stopPicking();
+  const { data: f } = await db.from('fittings').select('*').eq('id', id).single();
+  if (f) area.items.push(fitItem(f));
+  history.back();
+  renderSelection();
+  changed(true);
+  return true;
+};
+
 function tileItem(t, offers, role) {
-  const it = { kind: 'tile', ...t, offers: offers || [], pick: 0, role, sqft: '', boxes: '', code: null };
+  const it = { kind: 'tile', ...t, offers: sortOffers(offers), pick: 0, role, sqft: '', boxes: '', code: null, disc: sel.data.discAll || '' };
   it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || '';
   it.pdfName = sel.data.nameStyle === 'short' ? shortName(it.name) : sel.data.nameStyle === 'code' ? (it.code = newCode()) : it.name;
   return it;
@@ -739,6 +913,30 @@ $('sel-convert').addEventListener('click', async () => {
   window.scrollTo(0, 0);
   draftNote(`Made from the ${from}. The ${from} is still saved as it was.`);
 });
+const copiedNames = [];      // copies made since the list was last loaded
+
+// a second copy under a new name, e.g. "Sharad Pandan (2)"; the original stays as it was
+$('sel-dup').addEventListener('click', async () => {
+  const base = sel.client.trim();
+  if (!base) return alert("Please type the client's name first.");
+  if (!(await saveSelection(true))) return;
+  const root = base.replace(/\s*\(\d+\)$/, '');
+  const taken = new Set([...allSelections.map((s) => s.client || ''), ...copiedNames].map((c) => c.trim().toLowerCase()));
+  let n = 2;
+  while (taken.has(`${root} (${n})`.toLowerCase())) n++;
+  const name = prompt('Name for the copy:', `${root} (${n})`);
+  if (name === null) return;
+  if (!name.trim()) return alert('Please type a name for the copy.');
+  const from = WORD[kindOf(sel)];
+  const copy = JSON.parse(JSON.stringify(sel));
+  sel = { ...copy, id: null, quote_no: '', client: name.trim() };
+  if (!(await saveSelection(true))) return;
+  copiedNames.push(sel.client);
+  renderSelection();
+  window.scrollTo(0, 0);
+  draftNote(`This is the copy "${sel.client}". The first ${from} is still saved as it was.`);
+});
+
 // deletes the whole selection or quotation; one never saved online is only dropped from the phone
 $('sel-delete').addEventListener('click', async () => {
   const what = WORD[kindOf(sel)];
@@ -764,6 +962,9 @@ const PALETTES = {
     sand: [244, 232, 218], ink: [40, 24, 28], grey: [118, 102, 106], line: [230, 214, 200], white: [255, 255, 255] },
   kp: { main: [12, 45, 72], accent: [64, 185, 236], accentDark: [33, 104, 138], cream: [243, 248, 252],
     sand: [224, 238, 247], ink: [18, 32, 44], grey: [96, 110, 122], line: [208, 224, 236], white: [255, 255, 255] },
+  // Garg & Sons: bands shade from gold to near-black, like the app's top bar (Kirti 2026-10-27)
+  gsn: { main: [28, 28, 28], bandFrom: [184, 144, 47], bandTitle: [255, 246, 222], accent: [184, 144, 47], accentDark: [140, 105, 30],
+    cream: [250, 247, 240], sand: [240, 233, 216], ink: [28, 28, 28], grey: [105, 100, 92], line: [226, 216, 194], white: [255, 255, 255] },
 };
 let C = PALETTES.gs;
 
@@ -802,6 +1003,12 @@ async function staticData(url) {
 let logos = {};
 let logoData = null;
 let LOGO_RATIO = 1;
+
+// KP Enterprises' logo carries no full name, so its PDFs print the name beside the logo
+function shownName(biz) {
+  const room = SHOWROOMS[roomOf(sel)];
+  return room.printName ? (biz.name || room.name).toUpperCase() : '';
+}
 let fontFiles = null;
 const FONTS = [['Poppins-400.ttf', 'Poppins', 'normal'], ['Poppins-600.ttf', 'Poppins', 'bold'], ['Playfair-700.ttf', 'Playfair', 'bold']];
 
@@ -815,6 +1022,25 @@ async function startPdf(options, roomId = roomOf(sel)) {
   logoData = logos[room.logo] ||= await staticData(room.logo);
   LOGO_RATIO = room.logoRatio;
   return doc;
+}
+
+// a coloured band: plain main colour, or a left-to-right shade when the showroom has one
+function band(doc, x, y, w, h, rounded) {
+  if (!C.bandFrom) {
+    doc.setFillColor(...C.main);
+    return rounded ? doc.roundedRect(x, y, w, h, rounded, rounded, 'F') : doc.rect(x, y, w, h, 'F');
+  }
+  const n = Math.max(24, Math.round(w / 6));
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    doc.setFillColor(...C.bandFrom.map((a, k) => Math.round(a + (C.main[k] - a) * t)));
+    doc.rect(x + (w * i) / n, y, w / n + 0.6, h, 'F');
+  }
+}
+
+// title colour on a band: gold on a plain band, light on a shaded one
+function bandTitle() {
+  return C.bandTitle || C.accent;
 }
 
 function pen(doc, family, style, size, color) {
@@ -837,6 +1063,7 @@ function sizeText(o) {
 
 function tileDetails(it) {
   if (it.kind === 'other') return it.size || '';
+  if (isFit(it)) return `${it.brand}  ·  ${it.code}`;
   const o = offerOf(it);
   return [sizeText(o), finishTag(o.finish) && o.finish].filter(Boolean).join('  ·  ');
 }
@@ -879,15 +1106,15 @@ function busy(on, text = 'Making the PDF…') {
 
 // what the selection PDF shows: tiles, and products not in the app once they have a name
 function tileItems(area) {
-  return area.items.filter((it) => it.kind === 'tile' || (it.desc || '').trim());
+  return area.items.filter((it) => it.kind === 'tile' || isFit(it) || (it.desc || '').trim());
 }
 
 function itemName(it) {
-  return it.kind === 'tile' ? it.pdfName || it.name : it.desc.trim();
+  return it.kind === 'tile' || isFit(it) ? it.pdfName || it.name : it.desc.trim();
 }
 
 function itemPicture(it) {
-  return it.kind === 'tile' ? it.image_path : it.photo;
+  return it.kind === 'tile' || isFit(it) ? it.image_path || it.thumb_path : it.photo;
 }
 
 // ---------- selection PDF ----------
@@ -902,28 +1129,31 @@ async function selectionPdf() {
     const PW = 842, PH = 595;
     const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
     const paint = (c) => { doc.setFillColor(...c); doc.rect(0, 0, PW, PH, 'F'); };
+    const name = shownName(biz);
     const page = (title, sub) => {
       doc.addPage();
       paint(C.cream);
-      doc.setFillColor(...C.main); doc.rect(0, 0, PW, 66, 'F');
+      band(doc, 0, 0, PW, 66);
       doc.addImage(logoData, 'JPEG', 30, 7, 52 * LOGO_RATIO, 52);
-      pen(doc, 'Playfair', 'bold', 21, C.accent);
-      doc.text(title, 112, 42, { maxWidth: 520 });
+      if (name) { pen(doc, 'Poppins', 'bold', 9, C.cream); doc.text(name, 112, 22, { charSpace: 1.2 }); }
+      pen(doc, 'Playfair', 'bold', 21, bandTitle());
+      doc.text(title, 112, name ? 46 : 42, { maxWidth: 520 });
       if (sub) { pen(doc, 'Poppins', 'normal', 9, C.cream); doc.text(sub, PW - 36, 40, { align: 'right' }); }
     };
     const areas = sel.data.areas.filter((a) => tileItems(a).length);
 
     // cover
-    paint(C.main);
-    doc.addImage(logoData, 'JPEG', (PW - 240 * LOGO_RATIO) / 2, 54, 240 * LOGO_RATIO, 240);
-    doc.setDrawColor(...C.accent); doc.setLineWidth(0.8); doc.line(PW / 2 - 50, 322, PW / 2 + 50, 322);
-    pen(doc, 'Playfair', 'bold', 30, C.accent);
+    band(doc, 0, 0, PW, PH);
+    doc.addImage(logoData, 'JPEG', (PW - 240 * LOGO_RATIO) / 2, name ? 36 : 54, 240 * LOGO_RATIO, 240);
+    if (name) { pen(doc, 'Playfair', 'bold', 22, C.cream); doc.text(name, PW / 2, 306, { align: 'center', charSpace: 1.5 }); }
+    doc.setDrawColor(...bandTitle()); doc.setLineWidth(0.8); doc.line(PW / 2 - 50, 322, PW / 2 + 50, 322);
+    pen(doc, 'Playfair', 'bold', 30, bandTitle());
     doc.text('Tile Selection', PW / 2, 365, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 13, C.cream);
     doc.text(`Prepared for ${sel.client}`, PW / 2, 395, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 9.5, C.sand);
     doc.text([sel.data.address, today].filter(Boolean).join('   ·   '), PW / 2, 416, { align: 'center', maxWidth: 600 });
-    pen(doc, 'Poppins', 'normal', 8.5, C.accent);
+    pen(doc, 'Poppins', 'normal', 8.5, bandTitle());
     const tagline = biz.tagline ?? (roomOf(sel) === 'gs' ? 'LUXURY TILES   ·   BATHWARE   ·   ITALIAN MARBLE   ·   WINDOWS' : '');
     if (tagline) doc.text(tagline, PW / 2, PH - 42, { align: 'center', charSpace: 1 });
 
@@ -1006,9 +1236,10 @@ async function selectionPdf() {
 
     // closing page
     doc.addPage();
-    paint(C.main);
-    doc.addImage(logoData, 'JPEG', (PW - 170 * LOGO_RATIO) / 2, 80, 170 * LOGO_RATIO, 170);
-    pen(doc, 'Playfair', 'bold', 30, C.accent);
+    band(doc, 0, 0, PW, PH);
+    doc.addImage(logoData, 'JPEG', (PW - 170 * LOGO_RATIO) / 2, name ? 60 : 80, 170 * LOGO_RATIO, 170);
+    if (name) { pen(doc, 'Playfair', 'bold', 18, C.cream); doc.text(name, PW / 2, 262, { align: 'center', charSpace: 1.5 }); }
+    pen(doc, 'Playfair', 'bold', 30, bandTitle());
     doc.text('Thank You', PW / 2, 312, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 10, C.cream);
     [...(biz.address || []), [biz.phone, biz.email].filter(Boolean).join('   ·   ')].filter(Boolean)
@@ -1080,21 +1311,35 @@ async function quotationPdf() {
     const shownRate = (r) => (gstMode === 'split' ? r / (1 + gstRate / 100) : r);
     const fmtDate = (t) => new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // the columns ticked for this quotation; the description takes the room the others leave
-    const cols = [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
-      ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['amount', 74, 'AMOUNT']]
-      .filter(([k]) => k === 'desc' || show[k]).map(([k, w, head]) => ({ k, w, head }));
-    cols.find((c) => c.k === 'desc').w = W - cols.reduce((s, c) => s + c.w, 0);
-    let cx = M;
-    for (const c of cols) { c.x = cx; cx += c.w; c.right = cx; }
-    const col = Object.fromEntries(cols.map((c) => [c.k, c]));
-    const pics = !!col.pic;
+    // Tiles (and products not in the app) come first, then bathroom fittings in their own table,
+    // each with the columns ticked for this quotation; the description takes the room the others leave
+    const sections = [
+      { title: 'TILES', pick: (a) => a.items.filter((it) => !isFit(it)),
+        list: [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
+          ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['disc', 40, 'DISC.'], ['amount', 74, 'AMOUNT']] },
+      { title: 'BATHROOM FITTINGS', pick: (a) => a.items.filter(isFit),
+        list: [['serial', 22, '#'], ['pic', 50, 'PRODUCT'], ['desc', 0, 'DESCRIPTION'], ['qty', 50, 'QTY'],
+          ['rate', 64, gstMode === 'split' ? 'MRP (EX. GST)' : 'MRP'], ['disc', 44, 'DISC.'], ['amount', 74, 'AMOUNT']] },
+    ].filter((sec) => rows.some((a) => sec.pick(a).length));
+    let cols, col, pics, descW;
+    const useCols = (sec) => {
+      cols = sec.list.filter(([k]) => k === 'desc' || (show[k] ?? true))
+        .filter(([k]) => k !== 'disc' || rows.some((a) => sec.pick(a).some((it) => discOf(it)))).map(([k, w, head]) => ({ k, w, head }));
+      cols.find((c) => c.k === 'desc').w = W - cols.reduce((sum, c) => sum + c.w, 0);
+      let cx = M;
+      for (const c of cols) { c.x = cx; cx += c.w; c.right = cx; }
+      col = Object.fromEntries(cols.map((c) => [c.k, c]));
+      pics = !!col.pic;
+      descW = col.desc.w - 12;
+    };
     let y = 0;
 
     // letterhead
-    doc.setFillColor(...C.main); doc.rect(0, 0, PW, 122, 'F');
+    band(doc, 0, 0, PW, 122);
     doc.addImage(logoData, 'JPEG', M - 8, 10, 102 * LOGO_RATIO, 102);
-    pen(doc, 'Playfair', 'bold', 26, C.accent);
+    const name = shownName(biz);
+    if (name) { pen(doc, 'Playfair', 'bold', 17, C.cream); doc.text(name, M + 102 * LOGO_RATIO, 50, { charSpace: 1 }); }
+    pen(doc, 'Playfair', 'bold', 26, bandTitle());
     doc.text((q.title || '').trim() || 'QUOTATION', R, 46, { align: 'right', charSpace: 1, maxWidth: W - 110 * LOGO_RATIO });
     pen(doc, 'Poppins', 'normal', 8, C.cream);
     [...(biz.address || []), biz.phone && `Phone: ${biz.phone}`, biz.email, biz.gstin && `GSTIN: ${biz.gstin}`]
@@ -1121,7 +1366,7 @@ async function quotationPdf() {
     y = Math.max(cy, y + facts.length * 16 + 8) + 16;
 
     const tableHead = () => {
-      doc.setFillColor(...C.main); doc.rect(M, y, W, 22, 'F');
+      band(doc, M, y, W, 22);
       pen(doc, 'Poppins', 'bold', 7.5, C.cream);
       for (const c of cols) {
         const h = c.k === 'pic' && !pics ? '' : c.head;
@@ -1136,66 +1381,86 @@ async function quotationPdf() {
       y = 40;
       return true;
     };
-    tableHead();
 
     let serial = 0, subtotal = 0, withGst = 0, n = 0;
-    const count = rows.reduce((s, a) => s + a.items.length, 0);
-    const descW = col.desc.w - 12;
-    const areaSums = [];
-    for (const area of rows) {
-      const before = subtotal;
-      if (room(24 + 34)) tableHead();
-      doc.setFillColor(...C.sand); doc.rect(M, y, W, 24, 'F');
-      pen(doc, 'Playfair', 'bold', 11, C.main);
-      doc.text(area.name || 'Selection', M + 8, y + 16);
-      y += 24;
-      for (const it of area.items) {
-        busy(true, `Making the quotation… ${++n} of ${count}`);
-        const tile = it.kind === 'tile';
-        const o = tile ? offerOf(it) : {};
-        const rate = Number(it.rate) || 0;
-        const qty = tile ? Number(it.sqft) || 0 : Number(it.qty) || 0;
-        const shown = Math.round(shownRate(rate) * 100) / 100;
-        const amt = Math.round(qty * shown);
-        subtotal += amt;
-        withGst += amountOf(it);
-        pen(doc, 'Poppins', 'bold', 9, C.ink);
-        const name = doc.splitTextToSize(tile ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
-        const detail = [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && it.role === 'Other') && it.role].filter(Boolean).join('  ·  ');
-        pen(doc, 'Poppins', 'normal', 7.5, C.grey);
-        const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
-        const sizeLine = tile ? sizeText(o) : (it.size || '').trim();
-        const size = col.size && sizeLine ? doc.splitTextToSize(sizeLine, col.size.w - 10).slice(0, 3) : [];
-        const picPath = tile ? it.thumb_path || it.image_path : it.photo;
-        const textH = name.length * 11 + det.length * 9.5;
-        const h = Math.max(pics && picPath ? 52 : 28, textH + 16, size.length * 9.5 + 16);
-        if (room(h)) tableHead();
-        const mid = y + h / 2;
-        if (col.serial) { pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(String(++serial), col.serial.x + 6, mid + 3); }
-        if (pics && picPath) {
-          const pic = await pictureData(picPath, { maxSide: 240, aspect: 1 });
-          if (pic) doc.addImage(pic.src, 'JPEG', col.pic.x + 4, y + (h - 42) / 2, 42, 42);
-        }
-        let ty = mid - textH / 2 + 8;
-        pen(doc, 'Poppins', 'bold', 9, C.ink);
-        doc.text(name, col.desc.x + 6, ty);
-        ty += name.length * 11;
-        pen(doc, 'Poppins', 'normal', 7.5, C.grey);
-        if (det.length) doc.text(det, col.desc.x + 6, ty - 1);
-        if (size.length) { pen(doc, 'Poppins', 'normal', 7.8, C.ink); doc.text(size, col.size.x + 6, mid - (size.length * 9.5) / 2 + 7); }
-        pen(doc, 'Poppins', 'normal', 8.8, C.ink);
-        if (col.boxes && tile && it.boxes) doc.text(String(it.boxes), col.boxes.right - 6, mid + 3, { align: 'right' });
-        if (col.qty && qty) doc.text(tile ? `${money(qty)} sq ft` : `${qty} ${it.unit || ''}`.trim(), col.qty.right - 6, mid + 3, { align: 'right' });
-        if (col.rate && rate) {
-          doc.text(rs(shown, shown % 1 ? 2 : 0), col.rate.right - 6, mid + (tile ? 0 : 3), { align: 'right' });
-          if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', col.rate.right - 6, mid + 9, { align: 'right' }); }
-        }
-        pen(doc, 'Poppins', 'bold', 8.8, C.ink);
-        if (col.amount && amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
-        doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
-        y += h;
+    const count = rows.reduce((sum, a) => sum + a.items.length, 0);
+    const areaSums = rows.map((a) => [a.name || 'Selection', 0]);
+    for (const sec of sections) {
+      useCols(sec);
+      if (sections.length > 1) {
+        if (!room(30 + 22 + 24 + 34) && sec !== sections[0]) y += 14;
+        pen(doc, 'Poppins', 'bold', 9, C.accentDark);
+        doc.text(sec.title, M, y + 14, { charSpace: 1.5 });
+        y += 22;
       }
-      areaSums.push([area.name || 'Selection', subtotal - before]);
+      tableHead();
+      for (const [ai, area] of rows.entries()) {
+        const items = sec.pick(area);
+        if (!items.length) continue;
+        const before = subtotal;
+        if (room(24 + 34)) tableHead();
+        doc.setFillColor(...C.sand); doc.rect(M, y, W, 24, 'F');
+        pen(doc, 'Playfair', 'bold', 11, C.main);
+        doc.text(area.name || 'Selection', M + 8, y + 16);
+        y += 24;
+        for (const it of items) {
+          busy(true, `Making the quotation… ${++n} of ${count}`);
+          const tile = it.kind === 'tile', fit = isFit(it);
+          const o = tile ? offerOf(it) : {};
+          const rate = Number(it.rate) || 0;
+          const qty = tile ? Number(it.sqft) || 0 : Number(it.qty) || 0;
+          // with the discount column the rate is before discount; without it, the rate already has it taken off
+          const d = discOf(it);
+          const net = Math.round(shownRate(rate) * (1 - d / 100) * 100) / 100;
+          const shown = col.disc ? Math.round(shownRate(rate) * 100) / 100 : net;
+          const amt = Math.round(qty * net);
+          subtotal += amt;
+          withGst += amountOf(it);
+          pen(doc, 'Poppins', 'bold', 9, C.ink);
+          const name = doc.splitTextToSize(tile || fit ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
+          const detail = fit ? `${it.brand}  ·  ${it.code}`
+            : [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && it.role === 'Other') && it.role].filter(Boolean).join('  ·  ');
+          pen(doc, 'Poppins', 'normal', 7.5, C.grey);
+          const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
+          const sizeLine = tile ? sizeText(o) : (it.size || '').trim();
+          const size = col.size && sizeLine ? doc.splitTextToSize(sizeLine, col.size.w - 10).slice(0, 3) : [];
+          const picPath = tile || fit ? it.thumb_path || it.image_path : it.photo;
+          const textH = name.length * 11 + det.length * 9.5;
+          const h = Math.max(pics && picPath ? 52 : 28, textH + 16, size.length * 9.5 + 16);
+          if (room(h)) tableHead();
+          const mid = y + h / 2;
+          if (col.serial) { pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(String(++serial), col.serial.x + 6, mid + 3); }
+          if (pics && picPath) {
+            // tiles are cut square; a fitting is shown whole, fitted into the square
+            const pic = await pictureData(picPath, { maxSide: 240, aspect: fit ? null : 1 });
+            if (pic) {
+              const k = 42 / Math.max(pic.w, pic.h), pw = pic.w * k, ph = pic.h * k;
+              doc.addImage(pic.src, 'JPEG', col.pic.x + 4 + (42 - pw) / 2, y + (h - ph) / 2, pw, ph);
+            }
+          }
+          let ty = mid - textH / 2 + 8;
+          pen(doc, 'Poppins', 'bold', 9, C.ink);
+          doc.text(name, col.desc.x + 6, ty);
+          ty += name.length * 11;
+          pen(doc, 'Poppins', 'normal', 7.5, C.grey);
+          if (det.length) doc.text(det, col.desc.x + 6, ty - 1);
+          if (size.length) { pen(doc, 'Poppins', 'normal', 7.8, C.ink); doc.text(size, col.size.x + 6, mid - (size.length * 9.5) / 2 + 7); }
+          pen(doc, 'Poppins', 'normal', 8.8, C.ink);
+          if (col.boxes && tile && it.boxes) doc.text(String(it.boxes), col.boxes.right - 6, mid + 3, { align: 'right' });
+          if (col.qty && qty) doc.text(tile ? `${money(qty)} sq ft` : `${qty} ${it.unit || ''}`.trim(), col.qty.right - 6, mid + 3, { align: 'right' });
+          if (col.rate && rate) {
+            doc.text(rs(shown, shown % 1 ? 2 : 0), col.rate.right - 6, mid + (tile ? 0 : 3), { align: 'right' });
+            if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', col.rate.right - 6, mid + 9, { align: 'right' }); }
+          }
+          pen(doc, 'Poppins', 'normal', 8.8, C.ink);
+          if (col.disc && d) doc.text(pct(d), col.disc.right - 6, mid + 3, { align: 'right' });
+          pen(doc, 'Poppins', 'bold', 8.8, C.ink);
+          if (col.amount && amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
+          doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
+          y += h;
+        }
+        areaSums[ai][1] += subtotal - before;
+      }
     }
 
     // the ticked lines, e.g. "Cartage charges will be extra"
@@ -1250,8 +1515,8 @@ async function quotationPdf() {
         y += 20;
       });
       y += 4;
-      doc.setFillColor(...C.main); doc.roundedRect(tx, y, 220, 30, 4, 4, 'F');
-      pen(doc, 'Poppins', 'bold', 10.5, C.accent); doc.text('Grand Total', tx + 10, y + 19.5);
+      band(doc, tx, y, 220, 30, 4);
+      pen(doc, 'Poppins', 'bold', 10.5, bandTitle()); doc.text('Grand Total', tx + 10, y + 19.5);
       doc.text(rs(grand), R - 10, y + 19.5, { align: 'right' });
       if (part.words) words(top, tx - M - 24);
       y += 50;
@@ -1299,11 +1564,12 @@ async function quotationPdf() {
       pen(doc, 'Playfair', 'bold', 13, C.main);
       doc.text('Thank you for your business!', PW / 2, y, { align: 'center' });
       pen(doc, 'Poppins', 'normal', 8, C.grey);
-      doc.text(`For any questions about this quotation, call ${biz.phone || ''}${biz.email ? ' or write to ' + biz.email : ''}.`, PW / 2, y + 15, { align: 'center' });
+      const ask = [biz.phone && `call ${biz.phone}`, biz.email && `write to ${biz.email}`].filter(Boolean).join(' or ');
+      if (ask) doc.text(`For any questions about this quotation, ${ask}.`, PW / 2, y + 15, { align: 'center' });
       y += 30;
     }
     // strip of the brands Garg's Studio sells; KP Enterprises gets its own when Kirti sends it
-    if (part.brands && roomOf(sel) === 'gs') {
+    if (part.brands && SHOWROOMS[roomOf(sel)].brands) {
       const stripH = W * 59 / 560;
       room(stripH);
       doc.addImage(await staticData('icons/brand-strip.jpg'), 'JPEG', M, Math.max(y, BOTTOM - stripH), W, stripH);

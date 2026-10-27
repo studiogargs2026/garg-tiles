@@ -6,20 +6,30 @@
 create index if not exists tiles_name_trgm on public.tiles using gin (lower(name) extensions.gin_trgm_ops);
 create index if not exists tiles_brand_name_trgm on public.tiles using gin (lower(brand || ' ' || name) extensions.gin_trgm_ops);
 
--- "600X1200", "60x120", "1200 x 1800 mm", "2x4" (feet) -> "60x120" (cm, small side first, as base_size)
+-- "600X1200" (mm), "2X4" (feet), "18X12" / "48X8" (inches), "60x120" (cm) -> "60x120" (cm, small
+-- side first, as base_size). Catalog sizes in cm are kept as they are; otherwise sides up to 12 are
+-- feet, a side of 100 or more means mm, and anything else is inches (how the showroom writes them).
 create or replace function public.stock_size(s text) returns text language plpgsql immutable as $$
 declare
-  m text[] := regexp_match(lower(coalesce(s, '')), '(\d+(?:\.\d+)?)\s*(?:x|\*|×)\s*(\d+(?:\.\d+)?)');
-  a numeric; b numeric; k numeric;
+  m text[] := regexp_match(lower(coalesce(s, '')), '(\d+(?:\.\d+)?)\s*(?:"|''|ft|mm|cm)?\s*(?:x|\*|×)\s*(\d+(?:\.\d+)?)');
+  a numeric; b numeric; k numeric; v numeric[];
 begin
   if m is null then return null; end if;
   a := m[1]::numeric; b := m[2]::numeric;
-  -- feet up to 12; millimetres from 400 (or both sides from 150, like 200x200 or 300x300); else cm
-  k := case when greatest(a, b) <= 12 then 30.48 when greatest(a, b) >= 400 or least(a, b) >= 150 then 0.1 else 1 end;
-  a := round(a * k); b := round(b * k);
-  if k = 30.48 then a := round(a / 30) * 30; b := round(b / 30) * 30; end if;   -- 2x4 ft = 60x120
-  if a = 0 or b = 0 then return null; end if;
-  return least(a, b)::text || 'x' || greatest(a, b)::text;
+  if least(a, b)::text || 'x' || greatest(a, b)::text in ('60x120', '80x160', '120x180', '120x240', '80x240', '80x300',
+      '60x60', '30x60', '120x120', '20x120', '30x90', '80x80', '90x180') then
+    k := 1;
+  elsif greatest(a, b) <= 12 then k := 30.48;
+  elsif greatest(a, b) >= 100 then k := 0.1;
+  else k := 2.54;
+  end if;
+  v := array[a * k, b * k];
+  -- 605 mm, 2 ft (61 cm), 18" (45.7 cm) and 48" (122 cm) are the 60, 60, 45 and 120 cm sizes of the catalogs
+  for i in 1..2 loop
+    v[i] := case when abs(v[i] - round(v[i] / 5) * 5) <= greatest(1.3, v[i] * 0.02) then round(v[i] / 5) * 5 else round(v[i]) end;
+  end loop;
+  if v[1] = 0 or v[2] = 0 then return null; end if;
+  return least(v[1], v[2])::text || 'x' || greatest(v[1], v[2])::text;
 end;
 $$;
 
@@ -42,8 +52,8 @@ $$;
 
 -- the stock name without size, finish and packing words, for comparing with catalog names
 create or replace function public.stock_clean(s text) returns text language sql immutable as $$
-  select trim(regexp_replace(regexp_replace(regexp_replace(lower(coalesce(s, '')),
-    '\d+(\.\d+)?\s*(x|\*|×)\s*\d+(\.\d+)?\s*(mm|cm|ft)?', ' ', 'g'),
+  select trim(regexp_replace(regexp_replace(regexp_replace(translate(lower(coalesce(s, '')), 'áàâäãéèêëíìîïóòôöõúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn'),
+    '\d+(\.\d+)?\s*("|''|ft|mm|cm)?\s*(x|\*|×)\s*\d+(\.\d+)?\s*("|''|mm|cm|ft)?|\(?\d+\s*(pcs?|pack|ps)\)?|\(?\d*\s*pack\)?', ' ', 'g'),
     '\m(glossy|gloss|matt|matte|polished|polish|pgvt|gvt|dgvt|gvt|hg|gl|mt|satin|carving|rustic|lustre|luster|sugar|tiles?|pcs|box(es)?|mm|cm|ft|vitrified|porcelain|digital)\M', ' ', 'g'),
     '[^a-z0-9 ]+|\s+', ' ', 'g'))
 $$;
@@ -95,32 +105,48 @@ language sql stable set search_path = public as $$
   order by (finish_group(o.finish) is not distinct from p_finish) desc, (o.finish ~* 'border|corner|decor') , o.id limit 1
 $$;
 
+-- the catalog brand written in a stock name ("1200X600 ITALAKE ...", "COLOR" = Colortile), if any
+create or replace function public.stock_brand(p_name text) returns text
+language sql stable set search_path = public as $$
+  select b.brand from (select distinct brand from tiles) b
+  where lower(coalesce(p_name, '')) ~ ('\m(' || lower(split_part(b.brand, ' ', 1))
+          || case when b.brand = 'Colortile' then '|color' else '' end || ')\M')
+  order by length(b.brand) desc limit 1
+$$;
+
 -- best catalog tile for a stock name: similar name, and a bonus when the tile comes in that size and
--- finish. "whole" = every word of the catalog name is in the stock name; tiles like that come first.
--- (an older stock_guess(text, text, text) without "whole" is left unused in the database)
-create or replace function public.stock_match(p_name text, p_size text, p_finish text)
-returns table (tile_id bigint, score real, runner_up real, whole boolean)
+-- finish. When the stock name says the brand, only that brand's tiles are looked at. "whole" = every
+-- word of the catalog name is in the stock name; tiles like that come first.
+-- (older stock_guess and stock_match without the brand are left unused in the database)
+create or replace function public.stock_pick(p_name text, p_size text, p_finish text)
+returns table (tile_id bigint, score real, runner_up real, whole boolean, brand text)
 language plpgsql stable set search_path = public, extensions as $$
 declare
+  v_brand text := stock_brand(p_name);
   clean text := stock_clean(p_name);
 begin
+  if v_brand is not null then
+    clean := trim(regexp_replace(clean, '\m(' || lower(split_part(v_brand, ' ', 1))
+               || case when v_brand = 'Colortile' then '|color' else '' end || ')\M', ' ', 'g'));
+  end if;
   if length(clean) < 3 then return; end if;
-  perform set_config('pg_trgm.similarity_threshold', '0.3', true);
+  -- within one brand a looser likeness is enough to make a guess for the admin
+  perform set_config('pg_trgm.similarity_threshold', case when v_brand is null then '0.3' else '0.2' end, true);
   return query
   with c as (
     select t.id, t.name,
-      greatest(similarity(lower(t.name), clean), similarity(lower(t.brand || ' ' || t.name), clean))
+      similarity(lower(t.name), clean)
       + case when p_size is not null and exists (select 1 from offers o where o.tile_id = t.id and base_size(o.size) = p_size) then 0.12
              when p_size is not null then -0.15 else 0 end
       + case when p_finish is not null and exists (select 1 from offers o where o.tile_id = t.id and finish_group(o.finish) = p_finish) then 0.05 else 0 end as s,
-      not exists (select 1 from regexp_split_to_table(stock_clean(t.name), ' ') w
-                  where w <> '' and word_similarity(w, clean) < 0.8) as w
+      stock_clean(t.name) <> '' and not exists (select 1 from regexp_split_to_table(stock_clean(t.name), ' ') w
+                  where length(w) > 1 and word_similarity(w, clean) < 0.8) as w   -- "J-", "M-" collection letters can be left out
     from tiles t
-    where lower(t.name) % clean or lower(t.brand || ' ' || t.name) % clean
+    where (v_brand is null or t.brand = v_brand) and lower(t.name) % clean
   ), r as (select c.*, row_number() over (order by c.w desc, c.s desc, length(c.name)) n from c)
   select (select id from r where n = 1), (select s from r where n = 1)::real,
          (select max(s) from r where n > 1 and r.w = (select w from r where n = 1))::real,   -- the same name from two brands is never "sure"
-         (select w from r where n = 1)
+         (select w from r where n = 1), v_brand
   where exists (select 1 from r);
 end;
 $$;
@@ -132,7 +158,7 @@ language plpgsql security definer set search_path = public, extensions as $$
 declare
   l jsonb;
   v_name text; v_size text; v_finish text; v_key text; v_boxes numeric;
-  a stock_aliases; v_guess bigint; v_score real; v_runner real; v_whole boolean; v_tile bigint; v_sure boolean;
+  a stock_aliases; v_guess bigint; v_score real; v_runner real; v_whole boolean; v_brand text; v_tile bigint; v_sure boolean;
 begin
   if not is_admin() then raise exception 'Only admins can upload stock'; end if;
   if p_showroom not in ('gs', 'kp') then raise exception 'Unknown showroom'; end if;
@@ -144,15 +170,24 @@ begin
     v_size := coalesce(stock_size(l ->> 'size'), stock_size(v_name));
     v_finish := coalesce(finish_group(l ->> 'finish'), finish_group(v_name));
     v_key := stock_clean(v_name) || '|' || coalesce(v_size, '');
-    v_guess := null; v_score := null; v_runner := null; v_tile := null; v_sure := false;
+    v_guess := null; v_score := null; v_runner := null; v_whole := null; v_brand := null; v_tile := null; v_sure := false;
     select * into a from stock_aliases where match_key = v_key;
     if found then
       v_tile := a.tile_id; v_sure := true; v_score := 1;
     else
-      select g.tile_id, g.score, g.runner_up, g.whole into v_guess, v_score, v_runner, v_whole from stock_match(v_name, v_size, v_finish) g;
-      -- sure only when the whole catalog name is there, the size fits, and no other tile is as close
-      v_sure := coalesce(v_whole and v_score >= 0.6 and (v_runner is null or v_score - v_runner >= 0.05), false);
-      if v_sure then v_tile := v_guess; end if;
+      v_brand := stock_brand(v_name);
+      select g.tile_id, g.score, g.runner_up, g.whole into v_guess, v_score, v_runner, v_whole
+        from stock_pick(v_name, v_size, v_finish) g;
+      -- sure only when the stock name says a catalog brand and has the whole catalog name (or one
+      -- letter off, like Berlin / Berlim) and no other tile of that brand is as close
+      v_sure := coalesce(v_brand is not null and (
+                  (v_whole and v_score >= 0.75 and (v_runner is null or v_score - v_runner >= 0.05))
+                  or (v_score >= 0.95 and (v_runner is null or v_score - v_runner >= 0.3))), false);
+      if v_sure then v_tile := v_guess;
+      -- other brands (Somany, Comet...) are not in the catalogs: they stay as written, without a
+      -- question, unless the whole name of a catalog tile is in them
+      elsif v_brand is null and not coalesce(v_whole, false) then v_sure := true; v_guess := null;
+      end if;
     end if;
     insert into stock_lines (showroom, raw_name, raw_size, raw_finish, boxes, match_key, tile_id, offer_id, score, guess_tile_id, sure)
     values (p_showroom, v_name, v_size, v_finish, v_boxes, v_key, v_tile,
@@ -163,6 +198,7 @@ begin
   on conflict (showroom) do update set uploaded_at = excluded.uploaded_at, uploaded_by = excluded.uploaded_by,
     file_name = excluded.file_name, lines = excluded.lines, boxes = excluded.boxes;
   return (select jsonb_build_object('lines', count(*), 'boxes', coalesce(sum(boxes), 0), 'sure', count(*) filter (where sure),
+      'matched', count(*) filter (where tile_id is not null),
       'unsure', (select count(distinct match_key) from stock_lines where not sure))
     from stock_lines where showroom = p_showroom);
 end;

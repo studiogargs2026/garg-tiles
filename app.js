@@ -71,8 +71,9 @@ async function signedUrls(paths) {
 // Two showrooms, each with its own logo, colours, letterhead and quote numbers. Everyone picks
 // their showroom after signing in; the phone remembers it until they log out.
 const SHOWROOMS = {
-  gs: { name: "Garg's Studio", logo: 'icons/gs-logo.jpg', logoRatio: 716 / 600, settings: 'business', code: 'GS', color: '#f05a28' },
-  kp: { name: 'KP Enterprises', logo: 'icons/kp-logo.jpg', logoRatio: 790 / 757, settings: 'business_kp', code: 'KP', color: '#21688a' },
+  gs: { name: "Garg's Studio", logo: 'icons/gs-logo.jpg', brands: true, logoRatio: 716 / 600, settings: 'business', code: 'GS', color: '#f05a28' },
+  kp: { name: 'KP Enterprises', logo: 'icons/kp-logo.jpg', printName: true, logoRatio: 790 / 757, settings: 'business_kp', code: 'KP', color: '#21688a' },
+  gsn: { name: 'Garg & Sons', logo: 'icons/gsn-logo.jpg', brands: true, printName: true, logoRatio: 744 / 759, settings: 'business_gsn', code: 'GSN', color: '#b8902f' },
 };
 const SHOWROOM_KEY = 'garg-showroom';
 let showroom = null;
@@ -87,6 +88,7 @@ function useShowroom(id) {
   const room = SHOWROOMS[id];
   document.body.dataset.showroom = id;
   $('brand-name').textContent = room.name;
+  $('brand-by').textContent = 'SalesDesk by Garg';
   $('brand-logo').src = room.logo;
   $('brand-logo').hidden = false;
   document.querySelector('meta[name=theme-color]').content = room.color;
@@ -96,7 +98,8 @@ function forgetShowroom() {
   showroom = null;
   try { localStorage.removeItem(SHOWROOM_KEY); } catch { /* private mode */ }
   delete document.body.dataset.showroom;
-  $('brand-name').textContent = 'Master View';
+  $('brand-name').textContent = 'SalesDesk';
+  $('brand-by').textContent = 'by Garg';
   $('brand-logo').hidden = true;
 }
 
@@ -175,18 +178,36 @@ function sizeLabel(s) {
   return s.split('x').map((v) => Math.round(Number(v) * 10)).join('x') + ' mm';
 }
 
+// Biggest size first everywhere sizes are listed: by area, then the longer side. Works on "60x120" and "120x180 cm".
+function sizeDims(s) {
+  const m = /([\d.]+)\s*x\s*([\d.]+)/i.exec(s || '');
+  return m ? [Number(m[1]), Number(m[2])] : [0, 0];
+}
+function bySizeDesc(a, b) {
+  const [a1, a2] = sizeDims(a), [b1, b2] = sizeDims(b);
+  return b1 * b2 - a1 * a2 || Math.max(b1, b2) - Math.max(a1, a2);
+}
+function sortOffers(offers) {
+  return (offers || []).slice().sort((x, y) => bySizeDesc(x.size, y.size));
+}
+
+// bathroom fitting brands sit in the same brand list with the value "fit:<brand>"
+function fitBrand() {
+  const v = $('f-brand').value;
+  return v.startsWith('fit:') ? v.slice(4) : null;
+}
+
 function filters() {
-  return { p_brand: $('f-brand').value || null, p_size: $('f-size').value || null };
+  return { p_brand: (!fitBrand() && $('f-brand').value) || null, p_size: $('f-size').value || null };
 }
 
 async function loadFilters() {
   if ($('f-brand').options.length > 1) return;
-  const { data } = await db.rpc('tile_filters');
+  const [{ data }, { data: fitBrands }] = await Promise.all([db.rpc('tile_filters'), db.rpc('fitting_brands')]);
   if (!data) return;
-  $('f-brand').insertAdjacentHTML('beforeend', (data.brands || []).map((b) => `<option>${esc(b)}</option>`).join(''));
-  // Largest size first
-  const area = (s) => s.split('x').reduce((a, v) => a * Number(v), 1);
-  const sizes = (data.sizes || []).slice().sort((a, b) => area(b) - area(a) || Math.max(...b.split('x')) - Math.max(...a.split('x')));
+  $('f-brand').insertAdjacentHTML('beforeend', (data.brands || []).map((b) => `<option>${esc(b)}</option>`).join('')
+    + (fitBrands || []).map((b) => `<option value="fit:${esc(b)}">${esc(b)} (fittings)</option>`).join(''));
+  const sizes = (data.sizes || []).slice().sort(bySizeDesc);
   $('f-size').insertAdjacentHTML('beforeend', sizes.map((s) => `<option value="${esc(s)}">${sizeLabel(s)}</option>`).join(''));
 }
 
@@ -249,11 +270,37 @@ document.addEventListener('click', (e) => {
 
 const PAGE = 40;
 let shownQuery = '';
+let searchTurn = 0;   // only the newest search may fill the list (two quick searches showed every tile twice)
+
+const fitCard = (t, urls) => `
+    <li class="card"><button data-fit="${t.id}">
+      ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="" loading="lazy">` : '<div class="thumb-empty"></div>'}
+      <div class="info"><div class="name">${esc(t.name)}</div><div class="muted">${esc(t.brand)} · ${esc(t.code)}</div><div class="muted">MRP ₹${Number(t.mrp).toLocaleString('en-IN')}</div></div>
+    </button></li>`;
+
+// a fitting brand chosen in the brand list: only that brand's fittings, a page at a time
+async function runFitSearch(more, turn) {
+  if (!more) { shownQuery = $('q').value.trim(); lastResults = []; $('results').innerHTML = ''; }
+  $('status').textContent = 'Searching…';
+  $('more').hidden = true;
+  const { data, error } = await db.rpc('browse_fittings', { q: shownQuery, p_brand: fitBrand(), p_offset: lastResults.length, p_limit: PAGE });
+  if (turn !== searchTurn) return;
+  if (error) return ($('status').textContent = 'Could not search. Check your internet and try again.');
+  lastResults = lastResults.concat(data);
+  const n = lastResults.length;
+  $('status').textContent = n ? `${n}${data.length === PAGE ? '+' : ''} fitting${n > 1 ? 's' : ''}` : 'No fittings found. Try fewer words.';
+  $('more').hidden = data.length < PAGE;
+  const urls = await signedUrls(data.map((t) => t.thumb_path));
+  if (turn !== searchTurn) return;
+  $('results').insertAdjacentHTML('beforeend', data.map((t) => fitCard(t, urls)).join(''));
+}
 
 async function runSearch(more = false) {
   hideSuggest();
+  const turn = ++searchTurn;
   const q = $('q').value.trim();
   const f = filters();
+  if (fitBrand()) return runFitSearch(more, turn);
   if (!more && !q && !f.p_brand && !f.p_size) {
     $('status').textContent = '';
     $('results').innerHTML = '';
@@ -264,18 +311,28 @@ async function runSearch(more = false) {
   if (!more) { shownQuery = q; lastResults = []; $('results').innerHTML = ''; }
   $('status').textContent = 'Searching…';
   $('more').hidden = true;
-  const { data, error } = await db.rpc('browse_tiles', { q: shownQuery, ...f, p_offset: lastResults.length, p_limit: PAGE });
+  // typed words with no brand or size chosen also find bathroom fittings, shown after the tiles
+  const [{ data, error }, { data: fits }] = await Promise.all([
+    db.rpc('browse_tiles', { q: shownQuery, ...f, p_offset: lastResults.length, p_limit: PAGE }),
+    !more && shownQuery && !f.p_brand && !f.p_size ? db.rpc('browse_fittings', { q: shownQuery, p_offset: 0, p_limit: PAGE }) : { data: [] },
+  ]);
+  if (turn !== searchTurn) return;
   if (error) return ($('status').textContent = 'Could not search. Check your internet and try again.');
-  lastResults = lastResults.concat(data);
+  const have = new Set(lastResults.map((t) => t.id));
+  const fresh = data.filter((t) => !have.has(t.id));
+  lastResults = lastResults.concat(fresh);
   const n = lastResults.length;
-  $('status').textContent = n ? `${n}${data.length === PAGE ? '+' : ''} tile${n > 1 ? 's' : ''}` : 'No tiles found. Try fewer words or change the filters.';
+  const nf = fits?.length || 0;
+  $('status').textContent = n || nf ? [n && `${n}${data.length === PAGE ? '+' : ''} tile${n > 1 ? 's' : ''}`, nf && `${nf}${nf === PAGE ? '+' : ''} bathroom fitting${nf > 1 ? 's' : ''}`].filter(Boolean).join(' · ')
+    : 'No tiles found. Try fewer words or change the filters.';
   $('more').hidden = data.length < PAGE;
-  const urls = await signedUrls(data.map((t) => t.thumb_path));
-  $('results').insertAdjacentHTML('beforeend', data.map((t) => `
+  const urls = await signedUrls([...fresh, ...(fits || [])].map((t) => t.thumb_path));
+  if (turn !== searchTurn) return;
+  $('results').insertAdjacentHTML('beforeend', fresh.map((t) => `
     <li class="card"><button data-id="${t.id}">
       ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="" loading="lazy">` : '<div class="thumb-empty"></div>'}
       <div class="info"><div class="name">${esc(t.name)}</div><div class="muted">${esc(t.brand)}</div></div>
-    </button></li>`).join(''));
+    </button></li>`).join('') + (fits || []).map((t) => fitCard(t, urls)).join(''));
 }
 
 $('search-form').addEventListener('submit', (e) => {
@@ -301,19 +358,26 @@ $('q').addEventListener('input', () => {
   if (!q) { hideSuggest(); if (!filters().p_brand && !filters().p_size) runSearch(); return; }
   suggestTimer = setTimeout(async () => {
     const turn = ++suggestTurn;
-    const { data } = await db.rpc('suggest_tiles', { q, ...filters() });
+    const f = filters(), fb = fitBrand();
+    const [{ data: tiles }, { data: fits }] = await Promise.all([
+      fb ? { data: [] } : db.rpc('suggest_tiles', { q, ...f }),
+      f.p_brand || f.p_size ? { data: [] } : db.rpc('suggest_fittings', { q }),
+    ]);
     if (turn !== suggestTurn) return;
+    const data = [...(tiles || []), ...(fits || []).filter((t) => !fb || t.brand === fb).map((t) => ({ ...t, fit: true }))];
     if (!data?.length) return ($('suggest').hidden = true);
     const urls = await signedUrls(data.map((t) => t.thumb_path));
     if (turn !== suggestTurn) return;
-    $('suggest').innerHTML = data.map((t) => `<li><button type="button" data-id="${t.id}">
+    $('suggest').innerHTML = data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
       ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
-      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}</span></span></button></li>`).join('');
+      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ' · ' + esc(t.code) : ''}</span></span></button></li>`).join('');
     $('suggest').hidden = false;
   }, 200);
 });
 
 $('suggest').addEventListener('click', (e) => {
+  const fit = e.target.closest('button[data-fit]');
+  if (fit) { hideSuggest(); return pickOrOpenFit(Number(fit.dataset.fit)); }
   const btn = e.target.closest('button[data-id]');
   if (!btn) return;
   const id = Number(btn.dataset.id);
@@ -328,6 +392,8 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.suggest-wrap
 $('results').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-id]');
   if (btn) pickOrOpen(Number(btn.dataset.id));
+  const fit = e.target.closest('button[data-fit]');
+  if (fit) pickOrOpenFit(Number(fit.dataset.fit));
 });
 
 $('back').addEventListener('click', goBack);
@@ -338,13 +404,41 @@ async function pickOrOpen(id) {
   openTile(id);
 }
 
+async function pickOrOpenFit(id) {
+  if (window.pickFit && (await window.pickFit(id))) return;
+  openFitting(id);
+}
+
+// a bathroom fitting: picture, MRP, and the discounts its brand gives
+async function openFitting(id) {
+  $('tile').innerHTML = '<p class="muted">Loading…</p>';
+  show('tile-view');
+  const { data: f } = await db.from('fittings').select('*').eq('id', id).single();
+  if (!f) return ($('tile').innerHTML = '<p class="error">Could not load. Check your internet.</p>');
+  shownTile = null;
+  const urls = await signedUrls([f.image_path]);
+  const net = (pct) => rupees(f.mrp * (1 - pct / 100), 0);
+  const pct = (v) => Math.round(v * 100) / 100;
+  $('tile').innerHTML = `
+    ${urls[f.image_path] ? `<img class="hero fit-hero" src="${urls[f.image_path]}" alt="${esc(f.name)}">` : ''}
+    <h1>${esc(f.name)}</h1>
+    <p class="muted">${esc(f.brand)} · ${esc(f.code)}${f.category ? ' · ' + esc(f.category) : ''}</p>
+    <div class="card pad">
+      <p class="price">MRP ${rupees(f.mrp, 0)} <span class="muted">per piece</span></p>
+      ${f.clp_pct != null ? `<p>CLP discount ${pct(f.clp_pct)}%: ${net(f.clp_pct)}</p>` : ''}
+      ${f.hvr_pct != null ? `<p>HVR discount ${pct(f.hvr_pct)}%: ${net(f.hvr_pct)}</p>` : ''}
+      ${f.nrp ? `<p>NRP ${rupees(f.nrp, 0)} <span class="muted">(never printed in quotations)</span></p>` : ''}
+    </div>`;
+}
+
 async function openTile(id) {
   $('tile').innerHTML = '<p class="muted">Loading…</p>';
   show('tile-view');
-  const [{ data: full }, { data: offers }] = await Promise.all([
+  const [{ data: full }, { data: rows }] = await Promise.all([
     db.from('tiles').select('*').eq('id', id).single(),
     db.from('offers').select('*').eq('tile_id', id).order('size'),
   ]);
+  const offers = sortOffers(rows);
   shownTile = { full, offers: offers || [] };
   const costs = isAdmin || costPin ? await lookupCosts(offers || []) : null;
   const [urls, stock] = await Promise.all([signedUrls([full.image_path]), window.tileStockHtml?.(id).catch(() => '')]);
@@ -418,6 +512,7 @@ $('tile').addEventListener('click', async (e) => {
 $('admin').addEventListener('click', async () => {
   show('admin-view');
   loadStaff();
+  loadBizForm();
   const { data: locked } = await db.from('pin_attempts').select('user_id, failed').eq('locked', true);
   const ids = (locked || []).map((l) => l.user_id);
   const { data: people } = ids.length ? await db.from('profiles').select('id, full_name').in('id', ids) : { data: [] };
@@ -427,9 +522,47 @@ $('admin').addEventListener('click', async () => {
     : '<li class="muted">Nobody is locked out.</li>';
 });
 
+// Each showroom's bank and contact details for its quotations (app_settings 'business' / 'business_kp')
+async function readBiz(room) {
+  const { data, error } = await db.from('app_settings').select('value').eq('key', SHOWROOMS[room].settings).maybeSingle();
+  if (error) throw error;
+  return data?.value || {};
+}
+
+async function loadBizForm() {
+  $('biz-msg').textContent = '';
+  try {
+    const biz = await readBiz($('biz-room').value);
+    $('biz-form').querySelectorAll('[data-bank]').forEach((i) => (i.value = biz.bank?.[i.dataset.bank] || ''));
+    $('biz-form').querySelectorAll('[data-biz]').forEach((i) => (i.value = biz[i.dataset.biz] || ''));
+  } catch {
+    $('biz-msg').textContent = 'Could not load. Check your internet.';
+  }
+}
+
+$('biz-room').addEventListener('change', loadBizForm);
+
+$('biz-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const room = $('biz-room').value;
+  const key = SHOWROOMS[room].settings;
+  try {
+    const biz = await readBiz(room);     // keep the address, terms and everything else as they are
+    biz.bank = { ...(biz.bank || {}) };
+    $('biz-form').querySelectorAll('[data-bank]').forEach((i) => (biz.bank[i.dataset.bank] = i.value.trim()));
+    $('biz-form').querySelectorAll('[data-biz]').forEach((i) => (biz[i.dataset.biz] = i.value.trim()));
+    const { error } = await db.from('app_settings').upsert({ key, value: biz });
+    if (error) throw error;
+    if (typeof businesses !== 'undefined') delete businesses[key];   // the next quotation uses the new details
+    $('biz-msg').textContent = `Saved. New ${SHOWROOMS[room].name} quotations will show these details.`;
+  } catch {
+    $('biz-msg').textContent = 'Could not save. Check your internet and try again.';
+  }
+});
+
 async function loadStaff() {
   const { data } = await db.from('allowed_emails').select('*').order('full_name');
-  $('staff-list').innerHTML = (data || []).map((p) => `<li>${esc(p.full_name || '')} · ${esc(p.email)} · ${p.role === 'admin' ? 'Admin' : 'Sales'}
+  $('staff-list').innerHTML = (data || []).map((p) => `<li>${esc(p.full_name || '')} · ${esc(p.email)} · ${p.role === 'admin' ? 'Admin' : 'Sales Executive'}
     <button class="link" data-remove="${esc(p.email)}">Remove</button></li>`).join('');
 }
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Master View</title>
+  <title>SalesDesk</title>
   <meta name="theme-color" content="#f05a28">
   <meta name="color-scheme" content="light">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,12 +12,12 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Master View">
-  <link rel="stylesheet" href="style.css?v=22">
+  <meta name="apple-mobile-web-app-title" content="SalesDesk">
+  <link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
   <header class="bar">
-    <button id="brand" class="brand" type="button"><img id="brand-logo" alt="" hidden><span id="brand-name">Master View</span></button>
+    <button id="brand" class="brand" type="button"><img id="brand-logo" alt="" hidden><span class="brand-text"><span id="brand-name">SalesDesk</span><small id="brand-by">by Garg</small></span></button>
     <span>
       <button id="admin" class="link" hidden>Admin</button>
       <button id="logout" class="link" hidden>Log out</button>
@@ -26,6 +26,7 @@
 
   <main>
     <section id="login-view" hidden>
+      <p class="app-mark"><b>SalesDesk</b> <span>by Garg</span></p>
       <h1>Sign in</h1>
       <form id="login-form">
         <label>Email <input type="email" name="email" autocomplete="username" required></label>
@@ -42,6 +43,7 @@
       <div id="showroom-picks" class="showrooms">
         <button type="button" class="showroom-pick gs" data-room="gs"><img src="icons/gs-logo.jpg" alt=""><span>Garg's Studio</span></button>
         <button type="button" class="showroom-pick kp" data-room="kp"><img src="icons/kp-logo-light.jpg" alt=""><span>KP Enterprises</span></button>
+        <button type="button" class="showroom-pick gsn" data-room="gsn"><img src="icons/gsn-logo.jpg" alt=""><span>Garg &amp; Sons</span></button>
       </div>
     </section>
 
@@ -52,7 +54,7 @@
       </div>
       <form id="search-form" class="search">
         <div class="suggest-wrap">
-          <input id="q" type="search" placeholder="Tile name, e.g. Statuario" autocomplete="off" enterkeyhint="search">
+          <input id="q" type="search" placeholder="Tile or fitting name, e.g. Statuario" autocomplete="off" enterkeyhint="search">
           <ul id="suggest" class="suggest" hidden></ul>
         </div>
         <button type="submit" class="primary">Search</button>
@@ -82,11 +84,12 @@
       <button id="sel-unsaved" type="button" class="ghost" hidden>Continue unfinished selection</button>
       <div id="sel-admin" class="card pad" hidden>
         <div class="filters">
-          <select id="sel-f-room" aria-label="Showroom"><option value="">Both showrooms</option><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option></select>
+          <select id="sel-f-room" aria-label="Showroom"><option value="">All showrooms</option><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option><option value="gsn">Garg &amp; Sons</option></select>
           <select id="sel-f-person" aria-label="Employee"><option value="">Everyone</option></select>
         </div>
                 <table id="sel-by-person" class="by-person"></table>
       </div>
+      <input id="sel-search" class="sel-search" type="search" placeholder="Search client name, phone or quote no." autocomplete="off" enterkeyhint="search">
       <ul id="sel-list" class="plain sel-list"></ul>
     </section>
 
@@ -121,6 +124,31 @@
         <div class="qty-row" id="sel-q-row">
           <label>Quote number<input id="sel-quote-no" placeholder="made automatically"></label>
           <label>Labour charges ₹<input id="sel-labour" type="number" inputmode="decimal"></label>
+        </div>
+        <div class="qty-row disc-all q-only">
+          <label>Same discount on all items %<input id="sel-disc-all" type="number" inputmode="decimal" placeholder="e.g. 10"></label>
+          <button id="sel-disc-apply" type="button" class="ghost small">Apply to all</button>
+        </div>
+        <p class="muted q-only disc-note">Products added later get it too. You can still change any single item's discount in its own box.</p>
+        <div id="fit-prices" class="fit-prices q-only" hidden>
+          <h4>Bathroom fittings prices</h4>
+          <div id="fit-kohler" class="fit-brand">
+            <p><b>Kohler</b> <span class="muted">rate is always MRP</span></p>
+            <div class="fit-btns">
+              <button type="button" class="ghost small" data-fit="clp">CLP discount</button>
+              <button type="button" class="ghost small" data-fit="hvr">HVR discount</button>
+              <button type="button" class="ghost small" data-fit="none">No discount</button>
+            </div>
+          </div>
+          <div id="fit-jaquar" class="fit-brand">
+            <p><b>Jaquar</b> <span class="muted">quotation shows MRP, never NRP</span></p>
+            <div class="qty-row disc-all">
+              <label>Discount on<select id="fit-jq-base"><option value="mrp">MRP</option><option value="nrp">NRP</option></select></label>
+              <label>Discount %<input id="fit-jq-disc" type="number" inputmode="decimal" placeholder="e.g. 10"></label>
+              <button id="fit-jq-apply" type="button" class="ghost small">Apply</button>
+            </div>
+          </div>
+          <p class="muted disc-note">These change all of that brand's fittings in this quotation. You can still change each one in its own box.</p>
         </div>
         <label>Notes (printed in both PDFs)<textarea id="sel-notes" rows="3" placeholder="e.g. Skirting in the same tile. Delivery after 10 days."></textarea></label>
         <p id="sel-total" class="price"></p>
@@ -159,10 +187,11 @@
         <button id="sel-pdf" type="button" class="primary">Selection PDF</button>
         <button id="sel-quote" type="button" class="primary">Quotation PDF</button>
         <button id="sel-convert" type="button" class="ghost">Make a quotation</button>
+        <button id="sel-dup" type="button" class="ghost">Duplicate</button>
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">App version 22</p>
+      <p class="muted version">SalesDesk by Garg · App version 35</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -216,17 +245,17 @@
       <button id="admin-back" class="link">‹ Back</button>
       <h1>Admin</h1>
       <h2>Daily stock</h2>
-      <p class="muted">Upload today's stock PDF for each showroom. Sales Executives then see Garg + KP stock together.</p>
+      <p class="muted">Upload today's stock file (Excel or PDF) for each stock point. Sales Executives then see Garg + KP stock together.</p>
       <div class="stock-up">
-        <label class="primary ph-pick">Garg's Studio stock PDF<input class="stock-file" data-room="gs" type="file" accept="application/pdf,.pdf" hidden></label>
+        <label class="primary ph-pick">Garg stock file<input class="stock-file" data-room="gs" type="file" accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden></label>
         <p id="stock-last-gs" class="muted"></p>
-        <label class="primary ph-pick">KP Enterprises stock PDF<input class="stock-file" data-room="kp" type="file" accept="application/pdf,.pdf" hidden></label>
+        <label class="primary ph-pick">KP stock file<input class="stock-file" data-room="kp" type="file" accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden></label>
         <p id="stock-last-kp" class="muted"></p>
       </div>
       <p id="stock-msg" class="muted stock-msg"></p>
       <div id="stock-preview" class="card pad" hidden>
         <p id="stock-preview-head"></p>
-        <table class="by-person"><thead><tr><th>Name in the PDF</th><th>Boxes</th></tr></thead><tbody id="stock-preview-rows"></tbody></table>
+        <table class="by-person"><thead><tr><th>Name in your file</th><th>Boxes</th></tr></thead><tbody id="stock-preview-rows"></tbody></table>
         <div class="sel-actions two">
           <button id="stock-cancel" type="button" class="ghost">Cancel</button>
           <button id="stock-save" type="button" class="primary">Save stock</button>
@@ -236,24 +265,42 @@
       <p id="stock-review-head" class="muted"></p>
       <ul id="stock-review" class="plain-list"></ul>
       <h2>Cost price PIN</h2>
-      <p class="muted">Staff who are not admins type this PIN to see cost price.</p>
+      <p class="muted">Sales Executives who are not admins type this PIN to see cost price.</p>
       <form id="pin-form" class="search">
         <input id="new-pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" placeholder="New PIN (4 to 8 digits)" required>
         <button type="submit" class="primary">Save</button>
       </form>
       <p id="pin-msg" class="muted"></p>
-      <h2>Staff</h2>
+      <h2>Sales Executives</h2>
       <p class="muted">Add someone's email here, then they open the app, tap "First time here?" and choose a password.</p>
       <form id="staff-form">
         <label>Name <input id="staff-name" required></label>
         <label>Email <input id="staff-email" type="email" required></label>
         <label>Role
-          <select id="staff-role"><option value="sales">Sales (no cost price)</option><option value="admin">Admin (sees cost price)</option></select>
+          <select id="staff-role"><option value="sales">Sales Executive (no cost price)</option><option value="admin">Admin (sees cost price)</option></select>
         </label>
         <button type="submit" class="primary">Add</button>
       </form>
       <p id="staff-msg" class="muted"></p>
       <ul id="staff-list" class="plain"></ul>
+      <h2>Bank and contact details</h2>
+      <p class="muted">Printed on each showroom's quotations.</p>
+      <form id="biz-form">
+        <label>Showroom
+          <select id="biz-room"><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option><option value="gsn">Garg &amp; Sons</option></select>
+        </label>
+        <label>Account holder <input data-bank="title" autocomplete="off"></label>
+        <label>Bank name <input data-bank="name" autocomplete="off"></label>
+        <label>Account number <input data-bank="account" inputmode="numeric" autocomplete="off"></label>
+        <label>IFSC code <input data-bank="ifsc" autocomplete="off"></label>
+        <label>Branch <input data-bank="branch" autocomplete="off"></label>
+        <label>UPI ID <input data-bank="upi" autocomplete="off"></label>
+        <label>GST number <input data-biz="gstin" autocomplete="off"></label>
+        <label>Phone <input data-biz="phone" type="tel" autocomplete="off"></label>
+        <label>Email <input data-biz="email" type="email" autocomplete="off"></label>
+        <button type="submit" class="primary">Save details</button>
+      </form>
+      <p id="biz-msg" class="muted"></p>
       <h2>Locked out</h2>
       <p class="muted">People who typed a wrong PIN 5 times.</p>
       <ul id="locked-list"></ul>
@@ -270,11 +317,11 @@
   </nav>
 
   <script src="vendor/supabase.js"></script>
-  <script src="config.js?v=22"></script>
-  <script src="app.js?v=22"></script>
+  <script src="config.js?v=35"></script>
+  <script src="app.js?v=35"></script>
   <script src="vendor/jspdf.umd.min.js" defer></script>
-  <script src="selection.js?v=22"></script>
-  <script src="photo.js?v=22"></script>
-  <script src="stock.js?v=22"></script>
+  <script src="selection.js?v=35"></script>
+  <script src="photo.js?v=35"></script>
+  <script src="stock.js?v=35"></script>
 </body>
 </html>

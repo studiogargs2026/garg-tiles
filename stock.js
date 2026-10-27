@@ -107,9 +107,137 @@ function stockLines(rows) {
   return out;
 }
 
+// ---------- reading a stock Excel (.xlsx) on the phone ----------
+// An .xlsx file is a zip of XML files. The day-by-day stock register is big (45 MB of XML for
+// 1,400 columns), so only the name columns and the last stock column are kept.
+
+async function zipFiles(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(buf.buffer);
+  let end = buf.length - 22;
+  while (end >= 0 && dv.getUint32(end, true) !== 0x06054b50) end--;
+  if (end < 0) throw new Error('not a zip');
+  const files = {};
+  let p = dv.getUint32(end + 16, true);
+  for (let n = dv.getUint16(end + 10, true); n > 0; n--) {
+    const nameLen = dv.getUint16(p + 28, true);
+    const name = new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nameLen));
+    files[name] = { method: dv.getUint16(p + 10, true), size: dv.getUint32(p + 20, true), at: dv.getUint32(p + 42, true) };
+    p += 46 + nameLen + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+  }
+  const text = async (name) => {
+    const f = files[name];
+    if (!f) return '';
+    const start = f.at + 30 + dv.getUint16(f.at + 26, true) + dv.getUint16(f.at + 28, true);
+    const raw = buf.subarray(start, start + f.size);
+    if (f.method === 0) return new TextDecoder().decode(raw);
+    return new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  };
+  return { files, text };
+}
+
+function xmlText(s) {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e) => (e[0] === '#'
+    ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1)))
+    : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e.toLowerCase()]));
+}
+
+function colNumber(letters) {
+  let n = 0;
+  for (const ch of letters) n = n * 26 + ch.charCodeAt(0) - 64;
+  return n;
+}
+
+// the first sheet's rows as [{col: value}], keeping only the columns keep(col) says yes to
+async function sheetRows(file) {
+  const zip = await zipFiles(file);
+  const book = await zip.text('xl/workbook.xml');
+  const rid = (/<sheet\b[^>]*\br:id="([^"]+)"/.exec(book) || [])[1];
+  const rels = await zip.text('xl/_rels/workbook.xml.rels');
+  const target = (new RegExp(`<Relationship\\b[^>]*Id="${rid}"[^>]*Target="([^"]+)"`).exec(rels)
+    || new RegExp(`<Relationship\\b[^>]*Target="([^"]+)"[^>]*Id="${rid}"`).exec(rels) || [])[1] || 'worksheets/sheet1.xml';
+  const sheetPath = target.startsWith('/') ? target.slice(1) : 'xl/' + target;
+  const shared = [];
+  for (const m of (await zip.text('xl/sharedStrings.xml')).matchAll(/<si>([\s\S]*?)<\/si>/g)) {
+    shared.push(xmlText([...m[1].replace(/<rPh[\s\S]*?<\/rPh>/g, '').matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join('')));
+  }
+  return { xml: await zip.text(sheetPath), shared };
+}
+
+function* cellsOf(rowXml, shared, keep) {
+  for (const m of rowXml.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    const ref = /\br="([A-Z]+)\d+"/.exec(m[1]);
+    if (!ref || !m[2]) continue;
+    const col = colNumber(ref[1]);
+    if (keep && !keep(col)) continue;
+    const type = (/\bt="(\w+)"/.exec(m[1]) || [])[1];
+    let v = type === 'inlineStr' ? (/<t[^>]*>([\s\S]*?)<\/t>/.exec(m[2]) || [])[1] : (/<v>([\s\S]*?)<\/v>/.exec(m[2]) || [])[1];
+    if (v === undefined) continue;
+    if (type === 's') v = shared[Number(v)];
+    else if (type === 'str' || type === 'inlineStr') v = xmlText(v);
+    else if (type !== 'b' && type !== 'e' && v !== '' && !isNaN(v)) v = Number(v);
+    if (typeof v === 'string') v = v.trim();
+    if (v !== '' && v != null) yield [col, v];
+  }
+}
+
+const ITEM_HEAD = /^(item|items|item name|item description|description|particulars?|product|design|name|tile name)\b/i;
+const STOCK_HEAD = /stock|closing|balance|\bqty\b|quantity|boxes/i;
+const NOT_TILE = /grout|laticrete|latricate|adhesive|epoxy|\bkg\b|kathi|brick/i;
+
+// boxes from a cell: 45, "58(2pc)" and "8 BOX(7 PC)" are boxes; "6PC" or "2-4PC" are loose pieces
+function boxesIn(v) {
+  if (typeof v === 'number') return v;
+  if (/^\s*[\d.\-]+\s*pcs?\b/i.test(v)) return null;
+  const m = /^\s*(\d+(\.\d+)?)/.exec(v);
+  return m ? Number(m[1]) : null;
+}
+
+// {lines: [{name, boxes}], date}. Built for the day-by-day register (ITEM, then OUT / IN / STOCK
+// columns for every day, the newest on the right; the size and brand in the column before ITEM or
+// in a heading row), and for a plain list with a name column and a stock column.
+async function excelLines(file) {
+  const { xml, shared } = await sheetRows(file);
+  const rowXml = [...xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)].map((m) => m[1]);
+  let head = -1, itemCol = 0, candidates = [], heads = {};
+  for (let r = 0; r < Math.min(15, rowXml.length) && head < 0; r++) {
+    const cells = [...cellsOf(rowXml[r], shared)];
+    const item = cells.find(([, v]) => typeof v === 'string' && ITEM_HEAD.test(v));
+    if (!item) continue;
+    head = r;
+    itemCol = item[0];
+    candidates = cells.filter(([c, v]) => c > itemCol && typeof v === 'string' && STOCK_HEAD.test(v)).map(([c]) => c);
+    heads = Object.fromEntries(cells);
+  }
+  if (head < 0) throw new Error('no ITEM heading');
+  // the newest stock column is the rightmost one that has numbers in it
+  const last = candidates.slice(-8);
+  const keep = (c) => c <= itemCol || last.includes(c);
+  const rows = rowXml.slice(head + 1).map((x) => Object.fromEntries(cellsOf(x, shared, keep)));
+  const qtyCol = [...last].reverse().find((c) => rows.filter((r) => typeof r[c] === 'number').length >= 5) ?? last[last.length - 1];
+  const dateHead = [heads[qtyCol - 1], heads[qtyCol - 2], heads[qtyCol]].find((h) => /\d{1,2}[-./]\d{1,2}[-./]\d{2,4}/.test(h || ''));
+  const date = dateHead ? /\d{1,2}[-./]\d{1,2}[-./]\d{2,4}/.exec(dateHead)[0] : '';
+  const groupCol = itemCol - 1;
+  const out = [];
+  let heading = '';
+  for (const r of rows) {
+    const item = String(r[itemCol] ?? '').trim();
+    const group = groupCol > 0 ? String(r[groupCol] ?? '').trim() : '';
+    const q = r[qtyCol];
+    if (!item) continue;
+    if (!group && (q === undefined || q === '')) { heading = item; continue; }   // a heading like "600X300 RAK"
+    const boxes = q === undefined ? null : boxesIn(q);
+    if (!(boxes > 0)) continue;
+    const name = `${group || heading} ${item}`.replace(/\s+/g, ' ').trim();
+    if (NOT_TILE.test(name)) continue;
+    out.push({ name, boxes });
+  }
+  return { lines: out, date };
+}
+
 // ---------- admin: upload and check names ----------
 
-let pending = null;      // {room, file, lines} read from a PDF, waiting for Save
+let pending = null;      // {room, file, lines} read from a PDF or Excel file, waiting for Save
 
 async function loadUploads() {
   const { data } = await db.rpc('stock_filters');
@@ -121,28 +249,39 @@ async function loadUploads() {
   return data;
 }
 
+const STOCK_POINT = { gs: 'Garg', kp: 'KP' };
+
+function isExcel(file) {
+  return /\.xlsx$/i.test(file.name) || /spreadsheetml/.test(file.type);
+}
+
 document.querySelectorAll('.stock-file').forEach((input) => input.addEventListener('change', async () => {
   const file = input.files[0];
   input.value = '';
   if (!file) return;
   const room = input.dataset.room;
-  $('stock-msg').textContent = `Reading ${file.name}…`;
+  $('stock-msg').textContent = `Reading ${file.name}… a big Excel file can take up to a minute.`;
   $('stock-preview').hidden = true;
+  if (/\.xls$/i.test(file.name)) {
+    $('stock-msg').textContent = 'This is an old Excel file (.xls). Open it in Excel and save it as .xlsx, then upload that.';
+    return;
+  }
   try {
-    const lines = stockLines(await pdfRows(file));
+    const { lines, date } = isExcel(file) ? await excelLines(file) : { lines: stockLines(await pdfRows(file)), date: '' };
     if (!lines.length) {
-      $('stock-msg').textContent = 'No stock lines found in this PDF. Please send this PDF to Claude so the app can learn its layout.';
+      $('stock-msg').textContent = 'No stock lines found in this file. Please send it to Claude so the app can learn its layout.';
       return;
     }
-    pending = { room, file: file.name, lines };
+    pending = { room, file: file.name + (date ? ` (stock of ${date})` : ''), lines };
     const total = lines.reduce((s, l) => s + l.boxes, 0);
     $('stock-msg').textContent = '';
-    $('stock-preview-head').textContent = `${SHOWROOMS[room].name}: ${lines.length} tiles, ${boxesText(total)} boxes in total. Do these look right?`;
+    $('stock-preview-head').textContent = `${STOCK_POINT[room]} stock${date ? ' of ' + date : ''}: ${lines.length} tiles in stock, `
+      + `${boxesText(total)} boxes in total. Do these look right?`;
     $('stock-preview-rows').innerHTML = lines.slice(0, 12).map((l) => `<tr><td>${esc(l.name)}</td><td>${boxesText(l.boxes)}</td></tr>`).join('')
       + (lines.length > 12 ? `<tr><td class="muted">and ${lines.length - 12} more…</td><td></td></tr>` : '');
     $('stock-preview').hidden = false;
   } catch (e) {
-    $('stock-msg').textContent = 'Could not read this PDF. Check it opens on the phone, then try again.';
+    $('stock-msg').textContent = 'Could not read this file. Check it opens on the phone, then try again.';
   }
 }));
 
@@ -163,8 +302,10 @@ $('stock-save').addEventListener('click', async () => {
     }
     pending = null;
     $('stock-preview').hidden = true;
-    $('stock-msg').textContent = `${SHOWROOMS[room].name} stock saved: ${res.lines} lines, ${boxesText(res.boxes)} boxes. `
-      + `${res.sure} matched to catalog tiles.` + (res.unsure ? ` ${res.unsure} names need your check below.` : '');
+    const others = res.sure - res.matched;      // other brands, kept as written
+    $('stock-msg').textContent = `${STOCK_POINT[room]} stock saved: ${res.lines} tiles, ${boxesText(res.boxes)} boxes. `
+      + `${res.matched} matched to tiles in the app.` + (res.unsure ? ` ${res.unsure} names need your check below.` : '')
+      + (others > 0 ? ` ${others} are brands not in the app; they show with the name from your file.` : '');
     loadUploads();
     loadReview();
   } catch (e) {

@@ -122,7 +122,8 @@ def main(old_dir, tiles_path, work):
             for folder, page, (tx0, ty0, tx1, ty1), _ in spots:
                 for img in images[(folder, page)]:
                     w, h = img["w"], img["h"]
-                    if min(w, h) < 250:
+                    # long planks (20x120) are printed narrow: judge them by their length
+                    if min(w, h) < 250 and not (max(w, h) >= 600 and max(w, h) / min(w, h) >= 3):
                         continue
                     r = max(w, h) / min(w, h)
                     if not any(abs(r / want - 1) < 0.08 for want in ratios(d)):
