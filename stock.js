@@ -183,7 +183,8 @@ function* cellsOf(rowXml, shared, keep) {
 
 const ITEM_HEAD = /^(item|items|item name|item description|description|particulars?|product|design|name|tile name)\b/i;
 const STOCK_HEAD = /stock|closing|balance|\bqty\b|quantity|boxes/i;
-const NOT_TILE = /grout|laticrete|latricate|adhesive|epoxy|\bkg\b|kathi|brick/i;
+// not tiles: grout, adhesive (ARDEX-ENDURA GOLD STAR 20KG), plywood, display stands, samples, basins
+const NOT_TILE = /grout|laticrete|latricate|adhes|epoxy|ardex|sika|\d\s*kg\b|kathi|brick|\bply\b|display stand|protector|\bsample\s*$|cabinet|basin|mirror/i;
 
 // boxes from a cell: 45, "58(2pc)" and "8 BOX(7 PC)" are boxes; "6PC" or "2-4PC" are loose pieces
 function boxesIn(v) {
@@ -308,6 +309,7 @@ $('stock-save').addEventListener('click', async () => {
       + (others > 0 ? ` ${others} are brands not in the app; they show with the name from your file.` : '');
     loadUploads();
     loadReview();
+    loadMissing();
   } catch (e) {
     $('stock-msg').textContent = 'Could not save the stock: ' + (e.message || 'check your internet and try again.');
   } finally {
@@ -346,6 +348,7 @@ async function confirmName(li, tileId) {
   const left = $('stock-review').querySelectorAll('li.review').length;
   $('stock-review-head').textContent = left ? `${left} more to check.` : 'All stock names are matched.';
   if (!left) loadReview();
+  if (!tileId) loadMissing();
 }
 
 $('stock-review').addEventListener('click', (e) => {
@@ -384,7 +387,73 @@ $('stock-review').addEventListener('input', (e) => {
   }, 250);
 });
 
-$('admin').addEventListener('click', () => { loadUploads(); loadReview(); });
+// stock names that are not tiles of the app: other brands, and names marked "Not in catalog"
+let missingRows = [];
+
+async function loadMissing() {
+  const { data } = await db.rpc('stock_missing');
+  missingRows = data || [];
+  const boxes = missingRows.reduce((t, r) => t + Number(r.total), 0);
+  $('stock-missing-head').textContent = missingRows.length
+    ? `${missingRows.length} stock item${missingRows.length > 1 ? 's' : ''} (${boxesText(boxes)} boxes) are not in the app.`
+    : 'Every stock item is in the app.';
+  $('stock-missing-pdf').hidden = !missingRows.length;
+  $('stock-missing').innerHTML = missingRows.slice(0, 30).map((r) => `<tr><td>${esc(r.raw_name)}</td><td>${boxesText(r.total)}</td></tr>`).join('')
+    + (missingRows.length > 30 ? `<tr><td class="muted">and ${missingRows.length - 30} more in the PDF…</td><td></td></tr>` : '');
+}
+
+async function missingPdf() {
+  if (!missingRows.length) return;
+  $('stock-missing-pdf').disabled = true;
+  try {
+    const doc = await startPdf({}, showroom);
+    const PW = 595, PH = 842, M = 30;
+    const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    const cols = { name: M + 6, gs: PW - M - 110, kp: PW - M - 55, total: PW - M - 6 };
+    let y = 0;
+    const header = () => {
+      doc.setFillColor(...C.main); doc.rect(0, 0, PW, 62, 'F');
+      doc.addImage(logoData, 'JPEG', M, 7, 48 * LOGO_RATIO, 48);
+      pen(doc, 'Playfair', 'bold', 18, C.accent);
+      doc.text('Stock items not in the app', M + 48 * LOGO_RATIO + 14, 38);
+      pen(doc, 'Poppins', 'normal', 8.5, C.white);
+      doc.text(today, PW - M, 30, { align: 'right' });
+      y = 80;
+      doc.setFillColor(...C.sand); doc.rect(M, y, PW - 2 * M, 20, 'F');
+      pen(doc, 'Poppins', 'bold', 8.5, C.ink);
+      doc.text('Name in the stock file', cols.name, y + 13);
+      doc.text('Garg', cols.gs, y + 13, { align: 'right' });
+      doc.text('KP', cols.kp, y + 13, { align: 'right' });
+      doc.text('Boxes', cols.total, y + 13, { align: 'right' });
+      y += 32;
+    };
+    header();
+    for (const r of missingRows) {
+      const lines = doc.splitTextToSize(r.raw_name, cols.gs - cols.name - 40);
+      if (y + lines.length * 11 > PH - 40) { doc.addPage(); header(); }
+      pen(doc, 'Poppins', 'normal', 9, C.ink);
+      doc.text(lines, cols.name, y);
+      doc.text(boxesText(r.gs), cols.gs, y, { align: 'right' });
+      doc.text(boxesText(r.kp), cols.kp, y, { align: 'right' });
+      pen(doc, 'Poppins', 'bold', 9, C.ink);
+      doc.text(boxesText(r.total), cols.total, y, { align: 'right' });
+      y += lines.length * 11 + 3;
+      doc.setDrawColor(...C.line); doc.setLineWidth(0.4);
+      doc.line(M, y - 9, PW - M, y - 9);
+      y += 4;
+    }
+    pageNumbers(doc, `${SHOWROOMS[showroom].name} · Stock items not in the app · ${today}`, 1, false);
+    await deliver(doc, `Stock not in the app ${today}.pdf`);
+  } catch (e) {
+    alert('Could not make the PDF. Check your internet and try again.');
+  } finally {
+    $('stock-missing-pdf').disabled = false;
+  }
+}
+
+$('stock-missing-pdf').addEventListener('click', missingPdf);
+
+$('admin').addEventListener('click', () => { loadUploads(); loadReview(); loadMissing(); });
 
 // ---------- stock screen ----------
 
