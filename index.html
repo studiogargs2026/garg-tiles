@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SalesDesk">
-  <link rel="stylesheet" href="style.css?v=35">
+  <link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
   <header class="bar">
@@ -141,7 +141,7 @@
             </div>
           </div>
           <div id="fit-jaquar" class="fit-brand">
-            <p><b>Jaquar</b> <span class="muted">quotation shows MRP, never NRP</span></p>
+            <p><b>Jaquar</b> <span class="muted">NRP is printed only if you tick the NRP column</span></p>
             <div class="qty-row disc-all">
               <label>Discount on<select id="fit-jq-base"><option value="mrp">MRP</option><option value="nrp">NRP</option></select></label>
               <label>Discount %<input id="fit-jq-disc" type="number" inputmode="decimal" placeholder="e.g. 10"></label>
@@ -191,7 +191,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">SalesDesk by Garg · App version 35</p>
+      <p class="muted version">SalesDesk by Garg · App version 39</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -214,9 +214,56 @@
       <button id="ph-make" type="button" class="primary more" hidden>Start a client selection with these</button>
     </section>
 
+    <section id="stock-view" hidden>
+      <h1>Stock</h1>
+      <p id="st-dates" class="muted"></p>
+      <form id="st-form" class="search">
+        <input id="st-q" type="search" placeholder="Tile name (optional)" autocomplete="off" enterkeyhint="search">
+      </form>
+      <div class="filters">
+        <select id="st-size" aria-label="Size"><option value="">All sizes</option></select>
+        <select id="st-finish" aria-label="Finish"><option value="">All finishes</option></select>
+      </div>
+      <div class="filters">
+        <select id="st-brand" aria-label="Brand"><option value="">All brands</option></select>
+        <input id="st-min" type="number" inputmode="numeric" min="0" placeholder="At least … boxes" aria-label="At least how many boxes">
+      </div>
+      <div class="filters">
+        <select id="st-sort" aria-label="Order">
+          <option value="most">Most boxes first</option>
+          <option value="least">Fewest boxes first</option>
+          <option value="name">Name A to Z</option>
+        </select>
+        <button id="st-pdf" type="button" class="primary">Make PDF</button>
+      </div>
+      <p id="st-status" class="muted"></p>
+      <ul id="st-results" class="plain-list stock-list"></ul>
+      <button id="st-more" class="primary more" hidden>Show more tiles</button>
+    </section>
+
     <section id="admin-view" hidden>
       <button id="admin-back" class="link">‹ Back</button>
       <h1>Admin</h1>
+      <h2>Daily stock</h2>
+      <p class="muted">Upload today's stock file (Excel or PDF) for each stock point. Sales Executives then see Garg + KP stock together.</p>
+      <div class="stock-up">
+        <label class="primary ph-pick">Garg stock file<input class="stock-file" data-room="gs" type="file" accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden></label>
+        <p id="stock-last-gs" class="muted"></p>
+        <label class="primary ph-pick">KP stock file<input class="stock-file" data-room="kp" type="file" accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden></label>
+        <p id="stock-last-kp" class="muted"></p>
+      </div>
+      <p id="stock-msg" class="muted stock-msg"></p>
+      <div id="stock-preview" class="card pad" hidden>
+        <p id="stock-preview-head"></p>
+        <table class="by-person"><thead><tr><th>Name in your file</th><th>Boxes</th></tr></thead><tbody id="stock-preview-rows"></tbody></table>
+        <div class="sel-actions two">
+          <button id="stock-cancel" type="button" class="ghost">Cancel</button>
+          <button id="stock-save" type="button" class="primary">Save stock</button>
+        </div>
+      </div>
+      <h2>Stock names to check</h2>
+      <p id="stock-review-head" class="muted"></p>
+      <ul id="stock-review" class="plain-list"></ul>
       <h2>Cost price PIN</h2>
       <p class="muted">Sales Executives who are not admins type this PIN to see cost price.</p>
       <form id="pin-form" class="search">
@@ -264,15 +311,17 @@
     <button id="nav-back" type="button"><span aria-hidden="true">‹</span> Back</button>
     <button id="nav-home" type="button"><span aria-hidden="true">⌂</span> Home</button>
     <button id="nav-photo" type="button"><span aria-hidden="true">◉</span> Photo</button>
+    <button id="nav-stock" type="button"><span aria-hidden="true">▤</span> Stock</button>
     <button id="nav-sel" type="button"><span aria-hidden="true">☰</span> Selections</button>
     <button id="nav-quote" type="button"><span aria-hidden="true">₹</span> Quotes</button>
   </nav>
 
   <script src="vendor/supabase.js"></script>
-  <script src="config.js?v=35"></script>
-  <script src="app.js?v=35"></script>
+  <script src="config.js?v=39"></script>
+  <script src="app.js?v=39"></script>
   <script src="vendor/jspdf.umd.min.js" defer></script>
-  <script src="selection.js?v=35"></script>
-  <script src="photo.js?v=35"></script>
+  <script src="selection.js?v=39"></script>
+  <script src="photo.js?v=39"></script>
+  <script src="stock.js?v=39"></script>
 </body>
 </html>

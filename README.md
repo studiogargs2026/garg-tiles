@@ -25,4 +25,13 @@ catalog fingerprints (THUMBS = a folder of the bucket's 320px `thumb/` files, ~3
 `GARG_UPLOAD_TOKEN=... tools/photo_vectors.py send OUT`. Phones pick up the new fingerprints the
 next time Photo is opened. Highlighter options come from `highlighter_thumbs()` in the database.
 
+**Daily stock** (`stock.js`, database part in `supabase/stock.sql`): an admin taps "Garg stock file" or
+"KP stock file" in Admin. The phone reads an Excel file (.xlsx; for the day-by-day register it takes the
+newest STOCK column) or a PDF (pdf.js, `vendor/pdfjs/`),
+shows the lines for a check, and `upload_stock` matches each stock name to a catalog tile by
+similarity within the brand written in the name (size and finish help); other brands stay as written. Names it is not sure of are listed under "Stock names to check";
+the admin's answer is kept in `stock_aliases` and used every day after. Staff see Garg + KP stock on
+the Stock screen (size, finish, brand, minimum boxes, order) and on each tile, and "Make PDF" gives
+the list with pictures.
+
 No prices or catalog files are kept in this repository.
