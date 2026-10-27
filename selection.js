@@ -529,10 +529,11 @@ document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener(
 // printed under the list (only ticked ones) and the terms. New quotations start from the
 // showroom's usual ones, which admins can change from any quotation.
 const Q_COLS = [['serial', 'Sr. no.'], ['pic', 'Tile picture'], ['size', 'Size'], ['finish', 'Finish'], ['role', 'Used as (wall, floor…)'],
-  ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['disc', 'Discount'], ['amount', 'Amount'],
+  ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['disc', 'Discount'], ['offer', 'Offer price (after discount)'], ['amount', 'Amount'],
   ['mrp', 'MRP (fittings)'], ['nrp', 'NRP (Jaquar fittings)'], ['code', 'Product code (fittings)']];
-// NRP is printed only on quotations where it is ticked (Kirti 2026-10-27); the rest start with it off
-const COL_DEFAULT = { nrp: false };
+// NRP and the offer price are printed only on quotations where they are ticked (Kirti 2026-10-27);
+// the rest start with them off
+const COL_DEFAULT = { nrp: false, offer: false };
 const Q_PARTS = [['dates', 'Date and valid until'], ['areas', 'Area-wise summary'], ['totals', 'Totals and grand total'], ['words', 'Amount in words'],
   ['terms', 'Terms & conditions'], ['bank', 'Bank details'], ['thanks', 'Thank-you line'], ['brands', 'Brand logos strip']];
 const allOn = (list) => Object.fromEntries(list.map(([k]) => [k, true]));
@@ -1320,17 +1321,21 @@ async function quotationPdf() {
     const sections = [
       { title: 'TILES', pick: (a) => a.items.filter((it) => !isFit(it)),
         list: [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
-          ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['disc', 40, 'DISC.'], ['amount', 74, 'AMOUNT']] },
+          ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['disc', 40, 'DISC.'], ['offer', 64, 'OFFER PRICE'],
+          ['amount', 74, 'AMOUNT']] },
       { title: 'BATHROOM FITTINGS', pick: (a) => a.items.filter(isFit),
         list: [['serial', 22, '#'], ['pic', 50, 'PRODUCT'], ['desc', 0, 'DESCRIPTION'], ['qty', 50, 'QTY'],
           ['mrp', 62, gstMode === 'split' ? 'MRP (EX. GST)' : 'MRP'], ['nrp', 62, gstMode === 'split' ? 'NRP (EX. GST)' : 'NRP'],
-          ['disc', 44, 'DISC.'], ['amount', 74, 'AMOUNT']] },
+          ['disc', 44, 'DISC.'], ['offer', 64, 'OFFER PRICE'], ['amount', 74, 'AMOUNT']] },
     ].filter((sec) => rows.some((a) => sec.pick(a).length));
     let cols, col, pics, descW;
     const useCols = (sec) => {
       cols = sec.list.filter(([k]) => k === 'desc' || (show[k] ?? COL_DEFAULT[k] ?? true))
         .filter(([k]) => k !== 'nrp' || rows.some((a) => sec.pick(a).some((it) => it.nrp)))
         .filter(([k]) => k !== 'disc' || rows.some((a) => sec.pick(a).some((it) => discOf(it)))).map(([k, w, head]) => ({ k, w, head }));
+      // with many columns ticked the others give up some width so the description keeps room
+      const fixed = cols.filter((c) => !['desc', 'serial', 'pic'].includes(c.k)), extra = cols.reduce((sum, c) => sum + c.w, 0) - (W - 110);
+      if (extra > 0) { const k = 1 - extra / fixed.reduce((sum, c) => sum + c.w, 0); for (const c of fixed) c.w = Math.floor(c.w * k); }
       cols.find((c) => c.k === 'desc').w = W - cols.reduce((sum, c) => sum + c.w, 0);
       let cx = M;
       for (const c of cols) { c.x = cx; cx += c.w; c.right = cx; }
@@ -1376,7 +1381,7 @@ async function quotationPdf() {
       pen(doc, 'Poppins', 'bold', 7.5, C.cream);
       for (const c of cols) {
         const h = c.k === 'pic' && !pics ? '' : c.head;
-        if (['boxes', 'qty', 'rate', 'mrp', 'nrp', 'amount'].includes(c.k)) doc.text(h, c.right - 6, y + 14.5, { align: 'right' });
+        if (['boxes', 'qty', 'rate', 'mrp', 'nrp', 'offer', 'amount'].includes(c.k)) doc.text(h, c.right - 6, y + 14.5, { align: 'right' });
         else doc.text(h, c.x + 6, y + 14.5);
       }
       y += 22;
@@ -1415,10 +1420,11 @@ async function quotationPdf() {
           const o = tile ? offerOf(it) : {};
           const rate = Number(it.rate) || 0;
           const qty = tile ? Number(it.sqft) || 0 : Number(it.qty) || 0;
-          // with the discount column the rate is before discount; without it, the rate already has it taken off
+          // with the discount or offer price column the rate is before discount; without them, the rate
+          // already has it taken off. The offer price is the rate after discount.
           const d = discOf(it);
           const net = Math.round(shownRate(rate) * (1 - d / 100) * 100) / 100;
-          const shown = col.disc ? Math.round(shownRate(rate) * 100) / 100 : net;
+          const shown = col.disc || col.offer ? Math.round(shownRate(rate) * 100) / 100 : net;
           const amt = Math.round(qty * net);
           subtotal += amt;
           withGst += amountOf(it);
@@ -1464,6 +1470,10 @@ async function quotationPdf() {
           pen(doc, 'Poppins', 'normal', 8.8, C.ink);
           const dShown = col.nrp && it.base === 'nrp' ? Number(it.nrpDisc) || 0 : d;
           if (col.disc && dShown) doc.text(pct(dShown), col.disc.right - 6, mid + 3, { align: 'right' });
+          if (col.offer && rate) {
+            doc.text(rs(net, net % 1 ? 2 : 0), col.offer.right - 6, mid + (tile ? 0 : 3), { align: 'right' });
+            if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', col.offer.right - 6, mid + 9, { align: 'right' }); }
+          }
           pen(doc, 'Poppins', 'bold', 8.8, C.ink);
           if (col.amount && amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
           doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
