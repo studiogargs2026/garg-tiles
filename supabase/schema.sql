@@ -346,3 +346,26 @@ language sql security definer set search_path = public as $$
   update profiles set showroom = p_showroom where id = auth.uid() and p_showroom in ('gs', 'kp', 'gsn') and is_staff();
 $$;
 -- next_quote_no reads 'business_gsn' for p_showroom = 'gsn' (case ... when 'gsn' then 'business_gsn').
+
+-- Products typed in by hand ("+ Product not in the app") are kept here (2026-10-27), so anyone can
+-- find them again in the quick-add box of any selection or quotation. One row per name and size;
+-- saving the same name and size again updates it. Admins can remove a row.
+create table if not exists public.saved_products (
+  id bigint generated always as identity primary key,
+  name text not null check (length(trim(name)) > 0),
+  size text not null default '',
+  role text,
+  unit text,
+  rate numeric,
+  photo text,                -- small JPEG as a data: URL, like the item itself
+  key text generated always as (lower(trim(name)) || '|' || lower(trim(size))) stored unique,
+  created_by uuid default auth.uid() references auth.users on delete set null,
+  updated_at timestamptz not null default now()
+);
+alter table public.saved_products enable row level security;
+create policy "staff read saved products" on public.saved_products for select to authenticated using (public.is_staff());
+create policy "staff add saved products" on public.saved_products for insert to authenticated with check (public.is_staff());
+create policy "staff edit saved products" on public.saved_products for update to authenticated using (public.is_staff()) with check (public.is_staff());
+create policy "admins remove saved products" on public.saved_products for delete to authenticated using (public.is_admin());
+grant select, insert, delete on public.saved_products to authenticated;
+grant update (name, size, role, unit, rate, photo, updated_at) on public.saved_products to authenticated;

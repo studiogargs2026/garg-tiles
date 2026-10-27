@@ -669,30 +669,43 @@ $('qa-q').addEventListener('input', () => {
   if (!q) return hideQuick();
   qaTimer = setTimeout(async () => {
     const turn = ++qaTurn;
-    const [{ data: tiles }, { data: fits }] = await Promise.all([
+    const [{ data: tiles }, { data: fits }, saved] = await Promise.all([
       db.rpc('suggest_tiles', { q, p_brand: null, p_size: null }),
       db.rpc('suggest_fittings', { q }),
+      findSaved(q),
     ]);
     if (turn !== qaTurn) return;
     const data = [...(tiles || []), ...(fits || []).map((f) => ({ ...f, fit: true }))];
-    if (!data.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
+    if (!data.length && !saved.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
     const urls = await signedUrls(data.map((t) => t.thumb_path));
     if (turn !== qaTurn) return;
-    $('qa-list').innerHTML = data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
+    $('qa-list').innerHTML = saved.map((p, k) => `<li><button type="button" data-saved="${k}">
+      ${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="dot"></span>'}
+      <span><b>${esc(p.name)}</b> <span class="muted">${esc([p.size, 'added by hand before'].filter(Boolean).join(' · '))}</span></span></button></li>`).join('')
+      + data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
       ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
       <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ` · <span class="fit-code">${esc(t.code)} · MRP ₹${money(t.mrp)}</span>` : ''}</span></span></button></li>`).join('');
+    qaSaved = saved;
     $('qa-list').hidden = false;
   }, 200);
 });
 
 $('qa-list').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-id], button[data-fit]');
+  const btn = e.target.closest('button[data-id], button[data-fit], button[data-saved]');
   if (!btn) return;
   hideQuick();
   $('qa-q').value = '';
   $('qa-q').focus();
   if (!sel.data.areas.length) { sel.data.areas.push({ name: '', items: [] }); target = 0; }
   const area = sel.data.areas[target];
+  if (btn.dataset.saved) {
+    const p = qaSaved[Number(btn.dataset.saved)];
+    area.items.push({ kind: 'other', desc: p.name, role: p.role || 'Other', size: p.size || '', qty: '', unit: p.unit || 'Pcs', rate: p.rate ?? '', photo: p.photo || null, disc: sel.data.discAll || '' });
+    renderSelection();
+    changed(true);
+    $('qa-msg').textContent = `Added ${p.name} to ${area.name || `Area ${target + 1}`}`;
+    return;
+  }
   if (btn.dataset.fit) {
     const { data: f } = await db.from('fittings').select('*').eq('id', Number(btn.dataset.fit)).single();
     if (!f) return alert('Could not add it. Check your internet.');
@@ -715,6 +728,41 @@ $('qa-list').addEventListener('click', async (e) => {
 });
 
 document.addEventListener('click', (e) => { if (!e.target.closest('.qa-wrap')) hideQuick(); });
+
+// ---------- products added by hand, kept for next time ----------
+
+// Every "+ Product not in the app" with a name is kept in saved_products when the selection saves,
+// so anyone can add it again from the box at the top. Only rows that changed are sent.
+let qaSaved = [];
+const keptProducts = new Map();       // key -> what was last sent
+
+function productKey(name, size) {
+  return `${name.trim().toLowerCase()}|${(size || '').trim().toLowerCase()}`;
+}
+
+async function findSaved(q) {
+  const words = q.replace(/[%_,()]/g, ' ').split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  let query = db.from('saved_products').select('name, size, role, unit, rate, photo');
+  for (const w of words) query = query.ilike('name', `%${w}%`);
+  const { data } = await query.order('updated_at', { ascending: false }).limit(5);
+  return data || [];
+}
+
+async function keepProducts() {
+  const rows = new Map();
+  for (const a of sel.data.areas) for (const it of a.items) {
+    if (it.kind !== 'other' || !(it.desc || '').trim()) continue;
+    const row = { name: it.desc.trim(), size: (it.size || '').trim(), role: it.role || null, unit: it.unit || null,
+      rate: it.rate === '' || it.rate == null ? null : Number(it.rate), photo: it.photo || null };
+    rows.set(productKey(row.name, row.size), row);
+  }
+  const fresh = [...rows].filter(([k, r]) => keptProducts.get(k) !== JSON.stringify(r));
+  if (!fresh.length) return;
+  const at = new Date().toISOString();
+  const { error } = await db.from('saved_products').upsert(fresh.map(([, r]) => ({ ...r, updated_at: at })), { onConflict: 'key' });
+  if (!error) for (const [k, r] of fresh) keptProducts.set(k, JSON.stringify(r));
+}
 
 // a picture of a product that is not in the app, kept small inside the selection itself
 async function addPhoto(it, file) {
@@ -870,6 +918,7 @@ async function saveNow(quiet, auto) {
     : await db.from('selections').insert({ ...row, showroom: roomOf(sel) }).select('id').single();
   if (res.error) { if (!auto) alert('Could not save. Check your internet and try again.'); return false; }
   sel.id = res.data.id;
+  keepProducts().catch(() => {});
   keepLocal(current === 'selection-view' || pickArea !== null);
   if (!quiet) flash('Saved');
   return true;
