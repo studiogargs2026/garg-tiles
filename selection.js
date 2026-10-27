@@ -76,8 +76,28 @@ function lineText(it) {
 
 // ---------- quantities ----------
 
+// Pieces in a box for sizes where every brand in the price lists packs the same.
+// Used only when the price list gives no packing for a tile; the person can change it.
+const USUAL_PCS = { '120x240': 1, '80x240': 1, '80x300': 1, '120x180': 2, '80x160': 2, '60x120': 2, '60x60': 4 };
+
+function packingKnown(it) {
+  return !!chargedBoxSqft(offerOf(it));
+}
+
+function pcsOf(it) {
+  if (it.pcs !== undefined && it.pcs !== '') return Number(it.pcs) || 0;
+  const m = /([\d.]+)x([\d.]+)/.exec(offerOf(it).size || '');
+  return m ? USUAL_PCS[`${Math.round(m[1])}x${Math.round(m[2])}`] || 0 : 0;
+}
+
+// charged sq ft in one box: from the price list, else from the pieces typed on the item
+function boxSqftOf(it) {
+  const o = offerOf(it);
+  return chargedBoxSqft(o) || (pcsOf(it) ? chargedBoxSqft({ size: o.size, packing: `${pcsOf(it)} pcs` }) : null);
+}
+
 function setSqft(it, sqft) {
-  const box = chargedBoxSqft(offerOf(it)) || 0;
+  const box = boxSqftOf(it) || 0;
   if (box && sqft > 0) {
     it.boxes = Math.ceil(sqft / box - 1e-9);
     it.sqft = Math.round(it.boxes * box * 100) / 100;
@@ -88,7 +108,7 @@ function setSqft(it, sqft) {
 }
 
 function setBoxes(it, boxes) {
-  const box = chargedBoxSqft(offerOf(it)) || 0;
+  const box = boxSqftOf(it) || 0;
   it.boxes = boxes || '';
   if (box && boxes > 0) it.sqft = Math.round(boxes * box * 100) / 100;
 }
@@ -276,7 +296,6 @@ function itemHtml(it, ii) {
       <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
     </div>`;
   }
-  const o = offerOf(it);
   return `<div class="item" data-item="${ii}">
     <div class="item-top">
       <img class="sel-thumb" data-thumb="${esc(it.thumb_path || '')}" alt="">
@@ -294,7 +313,8 @@ function itemHtml(it, ii) {
       <label class="q-only">Rate ₹/sq ft<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
     </div>
     <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
-    <div class="muted amount">${chargedBoxSqft(o) ? `${chargedBoxSqft(o)} sq ft per box (charged)` : ''}<span class="q-only">${chargedBoxSqft(o) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
+    ${packingKnown(it) ? '' : `<div class="qty-row"><label>Pieces in 1 box<input data-f="pcs" type="number" inputmode="numeric" value="${esc(pcsOf(it) || '')}"></label><span class="muted pcs-note">Not in the price list, please check with the box</span></div>`}
+    <div class="muted amount">${boxSqftOf(it) ? `${boxSqftOf(it)} sq ft per box (charged)` : ''}<span class="q-only">${boxSqftOf(it) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
     <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
   </div>`;
 }
@@ -348,11 +368,16 @@ $('sel-areas').addEventListener('change', (e) => {
   if (f === 'role' || f === 'unit') it[f] = v;
   else if (f === 'pick') {
     it.pick = Number(v);
+    delete it.pcs;            // a new size has its own packing
     it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || it.rate;
     if (it.sqft) setSqft(it, Number(it.sqft));
   } else if (f === 'sqft') setSqft(it, Number(v));
   else if (f === 'boxes') setBoxes(it, Number(v));
-  else return;
+  else if (f === 'pcs') {
+    it.pcs = v;
+    if (it.boxes) setBoxes(it, Number(it.boxes));
+    else if (it.sqft) setSqft(it, Number(it.sqft));
+  } else return;
   renderSelection();
 });
 
