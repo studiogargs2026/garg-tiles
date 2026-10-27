@@ -202,3 +202,12 @@ body[data-showroom="kp"] {
 .room-tag { display: inline-block; padding: 1px 7px; margin-left: 6px; border-radius: 8px; font-size: .72rem; font-weight: 700; color: #fff; vertical-align: middle; }
 .room-tag.gs { background: #52011c; }
 .room-tag.kp { background: #21688a; }
+
+/* Garg & Sons: gold and black, from its logo */
+body[data-showroom="gsn"] {
+  --bg: #faf7f0; --line: #ece3cf; --accent: #b8902f; --accent-2: #1c1c1c; --soft: #f6efdc;
+  --shadow: 0 2px 10px rgba(28, 28, 28, .10); --glow: rgba(184, 144, 47, .2);
+}
+.showroom-pick.gsn { border-color: #1c1c1c; color: #1c1c1c; }
+.showroom-pick.gsn img { background: #000; }
+.room-tag.gsn { background: #1c1c1c; color: #e3c06a; }

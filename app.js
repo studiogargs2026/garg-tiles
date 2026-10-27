@@ -71,8 +71,9 @@ async function signedUrls(paths) {
 // Two showrooms, each with its own logo, colours, letterhead and quote numbers. Everyone picks
 // their showroom after signing in; the phone remembers it until they log out.
 const SHOWROOMS = {
-  gs: { name: "Garg's Studio", logo: 'icons/gs-logo.jpg', logoRatio: 716 / 600, settings: 'business', code: 'GS', color: '#f05a28' },
-  kp: { name: 'KP Enterprises', logo: 'icons/kp-logo.jpg', logoRatio: 790 / 757, settings: 'business_kp', code: 'KP', color: '#21688a' },
+  gs: { name: "Garg's Studio", logo: 'icons/gs-logo.jpg', brands: true, logoRatio: 716 / 600, settings: 'business', code: 'GS', color: '#f05a28' },
+  kp: { name: 'KP Enterprises', logo: 'icons/kp-logo.jpg', printName: true, logoRatio: 790 / 757, settings: 'business_kp', code: 'KP', color: '#21688a' },
+  gsn: { name: 'Garg & Sons', logo: 'icons/gsn-logo.jpg', brands: true, printName: true, logoRatio: 744 / 759, settings: 'business_gsn', code: 'GSN', color: '#b8902f' },
 };
 const SHOWROOM_KEY = 'garg-showroom';
 let showroom = null;
@@ -437,6 +438,7 @@ $('tile').addEventListener('click', async (e) => {
 $('admin').addEventListener('click', async () => {
   show('admin-view');
   loadStaff();
+  loadBizForm();
   const { data: locked } = await db.from('pin_attempts').select('user_id, failed').eq('locked', true);
   const ids = (locked || []).map((l) => l.user_id);
   const { data: people } = ids.length ? await db.from('profiles').select('id, full_name').in('id', ids) : { data: [] };
@@ -444,6 +446,44 @@ $('admin').addEventListener('click', async () => {
   $('locked-list').innerHTML = ids.length
     ? ids.map((id) => `<li>${esc(names[id] || id)} <button class="link" data-unlock="${id}">Unlock</button></li>`).join('')
     : '<li class="muted">Nobody is locked out.</li>';
+});
+
+// Each showroom's bank and contact details for its quotations (app_settings 'business' / 'business_kp')
+async function readBiz(room) {
+  const { data, error } = await db.from('app_settings').select('value').eq('key', SHOWROOMS[room].settings).maybeSingle();
+  if (error) throw error;
+  return data?.value || {};
+}
+
+async function loadBizForm() {
+  $('biz-msg').textContent = '';
+  try {
+    const biz = await readBiz($('biz-room').value);
+    $('biz-form').querySelectorAll('[data-bank]').forEach((i) => (i.value = biz.bank?.[i.dataset.bank] || ''));
+    $('biz-form').querySelectorAll('[data-biz]').forEach((i) => (i.value = biz[i.dataset.biz] || ''));
+  } catch {
+    $('biz-msg').textContent = 'Could not load. Check your internet.';
+  }
+}
+
+$('biz-room').addEventListener('change', loadBizForm);
+
+$('biz-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const room = $('biz-room').value;
+  const key = SHOWROOMS[room].settings;
+  try {
+    const biz = await readBiz(room);     // keep the address, terms and everything else as they are
+    biz.bank = { ...(biz.bank || {}) };
+    $('biz-form').querySelectorAll('[data-bank]').forEach((i) => (biz.bank[i.dataset.bank] = i.value.trim()));
+    $('biz-form').querySelectorAll('[data-biz]').forEach((i) => (biz[i.dataset.biz] = i.value.trim()));
+    const { error } = await db.from('app_settings').upsert({ key, value: biz });
+    if (error) throw error;
+    if (typeof businesses !== 'undefined') delete businesses[key];   // the next quotation uses the new details
+    $('biz-msg').textContent = `Saved. New ${SHOWROOMS[room].name} quotations will show these details.`;
+  } catch {
+    $('biz-msg').textContent = 'Could not save. Check your internet and try again.';
+  }
 });
 
 async function loadStaff() {

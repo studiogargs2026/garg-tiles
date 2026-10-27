@@ -567,7 +567,7 @@ function renderQuoteSettings() {
   $('q-valid').value = q.validDays;
   $('q-valid-wrap').hidden = !q.parts.dates;
   $('q-cols').innerHTML = Q_COLS.map((c) => box('col', c)).join('');
-  $('q-parts').innerHTML = Q_PARTS.filter(([k]) => k !== 'brands' || roomOf(sel) === 'gs').map((c) => box('part', c)).join('');
+  $('q-parts').innerHTML = Q_PARTS.filter(([k]) => k !== 'brands' || SHOWROOMS[roomOf(sel)].brands).map((c) => box('part', c)).join('');
   $('q-lines').innerHTML = q.lines.map((l, i) => `<div class="q-line${l.on ? '' : ' off'}" data-line="${i}">
       <input type="checkbox" data-f="on"${l.on ? ' checked' : ''} aria-label="Print this line">
       <input type="text" data-f="text" value="${esc(l.text)}" placeholder="e.g. Loading and unloading extra">
@@ -949,6 +949,8 @@ const PALETTES = {
     sand: [244, 232, 218], ink: [40, 24, 28], grey: [118, 102, 106], line: [230, 214, 200], white: [255, 255, 255] },
   kp: { main: [12, 45, 72], accent: [64, 185, 236], accentDark: [33, 104, 138], cream: [243, 248, 252],
     sand: [224, 238, 247], ink: [18, 32, 44], grey: [96, 110, 122], line: [208, 224, 236], white: [255, 255, 255] },
+  gsn: { main: [10, 10, 10], accent: [214, 175, 72], accentDark: [150, 115, 40], cream: [250, 247, 240],
+    sand: [238, 232, 218], ink: [24, 24, 24], grey: [105, 105, 105], line: [222, 214, 198], white: [255, 255, 255] },
 };
 let C = PALETTES.gs;
 
@@ -987,6 +989,12 @@ async function staticData(url) {
 let logos = {};
 let logoData = null;
 let LOGO_RATIO = 1;
+
+// KP Enterprises' logo carries no full name, so its PDFs print the name beside the logo
+function shownName(biz) {
+  const room = SHOWROOMS[roomOf(sel)];
+  return room.printName ? (biz.name || room.name).toUpperCase() : '';
+}
 let fontFiles = null;
 const FONTS = [['Poppins-400.ttf', 'Poppins', 'normal'], ['Poppins-600.ttf', 'Poppins', 'bold'], ['Playfair-700.ttf', 'Playfair', 'bold']];
 
@@ -1088,20 +1096,23 @@ async function selectionPdf() {
     const PW = 842, PH = 595;
     const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
     const paint = (c) => { doc.setFillColor(...c); doc.rect(0, 0, PW, PH, 'F'); };
+    const name = shownName(biz);
     const page = (title, sub) => {
       doc.addPage();
       paint(C.cream);
       doc.setFillColor(...C.main); doc.rect(0, 0, PW, 66, 'F');
       doc.addImage(logoData, 'JPEG', 30, 7, 52 * LOGO_RATIO, 52);
+      if (name) { pen(doc, 'Poppins', 'bold', 9, C.cream); doc.text(name, 112, 22, { charSpace: 1.2 }); }
       pen(doc, 'Playfair', 'bold', 21, C.accent);
-      doc.text(title, 112, 42, { maxWidth: 520 });
+      doc.text(title, 112, name ? 46 : 42, { maxWidth: 520 });
       if (sub) { pen(doc, 'Poppins', 'normal', 9, C.cream); doc.text(sub, PW - 36, 40, { align: 'right' }); }
     };
     const areas = sel.data.areas.filter((a) => tileItems(a).length);
 
     // cover
     paint(C.main);
-    doc.addImage(logoData, 'JPEG', (PW - 240 * LOGO_RATIO) / 2, 54, 240 * LOGO_RATIO, 240);
+    doc.addImage(logoData, 'JPEG', (PW - 240 * LOGO_RATIO) / 2, name ? 36 : 54, 240 * LOGO_RATIO, 240);
+    if (name) { pen(doc, 'Playfair', 'bold', 22, C.cream); doc.text(name, PW / 2, 306, { align: 'center', charSpace: 1.5 }); }
     doc.setDrawColor(...C.accent); doc.setLineWidth(0.8); doc.line(PW / 2 - 50, 322, PW / 2 + 50, 322);
     pen(doc, 'Playfair', 'bold', 30, C.accent);
     doc.text('Tile Selection', PW / 2, 365, { align: 'center' });
@@ -1193,7 +1204,8 @@ async function selectionPdf() {
     // closing page
     doc.addPage();
     paint(C.main);
-    doc.addImage(logoData, 'JPEG', (PW - 170 * LOGO_RATIO) / 2, 80, 170 * LOGO_RATIO, 170);
+    doc.addImage(logoData, 'JPEG', (PW - 170 * LOGO_RATIO) / 2, name ? 60 : 80, 170 * LOGO_RATIO, 170);
+    if (name) { pen(doc, 'Playfair', 'bold', 18, C.cream); doc.text(name, PW / 2, 262, { align: 'center', charSpace: 1.5 }); }
     pen(doc, 'Playfair', 'bold', 30, C.accent);
     doc.text('Thank You', PW / 2, 312, { align: 'center' });
     pen(doc, 'Poppins', 'normal', 10, C.cream);
@@ -1292,6 +1304,8 @@ async function quotationPdf() {
     // letterhead
     doc.setFillColor(...C.main); doc.rect(0, 0, PW, 122, 'F');
     doc.addImage(logoData, 'JPEG', M - 8, 10, 102 * LOGO_RATIO, 102);
+    const name = shownName(biz);
+    if (name) { pen(doc, 'Playfair', 'bold', 17, C.cream); doc.text(name, M + 102 * LOGO_RATIO, 50, { charSpace: 1 }); }
     pen(doc, 'Playfair', 'bold', 26, C.accent);
     doc.text((q.title || '').trim() || 'QUOTATION', R, 46, { align: 'right', charSpace: 1, maxWidth: W - 110 * LOGO_RATIO });
     pen(doc, 'Poppins', 'normal', 8, C.cream);
@@ -1517,11 +1531,12 @@ async function quotationPdf() {
       pen(doc, 'Playfair', 'bold', 13, C.main);
       doc.text('Thank you for your business!', PW / 2, y, { align: 'center' });
       pen(doc, 'Poppins', 'normal', 8, C.grey);
-      doc.text(`For any questions about this quotation, call ${biz.phone || ''}${biz.email ? ' or write to ' + biz.email : ''}.`, PW / 2, y + 15, { align: 'center' });
+      const ask = [biz.phone && `call ${biz.phone}`, biz.email && `write to ${biz.email}`].filter(Boolean).join(' or ');
+      if (ask) doc.text(`For any questions about this quotation, ${ask}.`, PW / 2, y + 15, { align: 'center' });
       y += 30;
     }
     // strip of the brands Garg's Studio sells; KP Enterprises gets its own when Kirti sends it
-    if (part.brands && roomOf(sel) === 'gs') {
+    if (part.brands && SHOWROOMS[roomOf(sel)].brands) {
       const stripH = W * 59 / 560;
       room(stripH);
       doc.addImage(await staticData('icons/brand-strip.jpg'), 'JPEG', M, Math.max(y, BOTTOM - stripH), W, stripH);

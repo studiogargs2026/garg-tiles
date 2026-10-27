@@ -335,3 +335,14 @@ language sql stable set search_path to 'public', 'extensions' as $$
   order by lower(f.code) like lower(trim(q)) || '%' desc, f.thumb_path is not null desc, length(f.name), f.code
   limit 8
 $$;
+
+-- Third showroom (2026-10-27): Garg & Sons ('gsn'), letterhead in app_settings 'business_gsn'.
+alter table public.selections drop constraint selections_showroom_check, add constraint selections_showroom_check check (showroom in ('gs', 'kp', 'gsn'));
+alter table public.profiles drop constraint profiles_showroom_check, add constraint profiles_showroom_check check (showroom in ('gs', 'kp', 'gsn'));
+alter table public.stock_lines drop constraint stock_lines_showroom_check, add constraint stock_lines_showroom_check check (showroom in ('gs', 'kp', 'gsn'));
+alter table public.stock_uploads drop constraint stock_uploads_showroom_check, add constraint stock_uploads_showroom_check check (showroom in ('gs', 'kp', 'gsn'));
+create or replace function public.set_my_showroom(p_showroom text) returns void
+language sql security definer set search_path = public as $$
+  update profiles set showroom = p_showroom where id = auth.uid() and p_showroom in ('gs', 'kp', 'gsn') and is_staff();
+$$;
+-- next_quote_no reads 'business_gsn' for p_showroom = 'gsn' (case ... when 'gsn' then 'business_gsn').
