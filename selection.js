@@ -110,6 +110,7 @@ function money(n) {
 // ---------- list of selections ----------
 
 async function openSelections(kind = listKind) {
+  if (kind !== listKind) $('sel-search').value = '';
   listKind = kind;
   if (current === 'selection-view') leftSelection();
   show('selections-view');
@@ -123,7 +124,7 @@ async function openSelections(kind = listKind) {
   $('sel-admin').hidden = !isAdmin;
   // the database only gives each person their own; admins get everyone's
   const [{ data, error }, people] = await Promise.all([
-    db.from('selections').select('id, client, quote_no, updated_at, showroom, created_by, total, kind:data->>kind').order('updated_at', { ascending: false }).limit(1000),
+    db.from('selections').select('id, client, quote_no, updated_at, showroom, created_by, total, kind:data->>kind, phone:data->>phone').order('updated_at', { ascending: false }).limit(1000),
     isAdmin ? staffNames() : {},
   ]);
   if (error) return ($('sel-list').innerHTML = '<li class="error">Could not load. Check your internet.</li>');
@@ -152,13 +153,15 @@ function showSelectionList() {
   const room = isAdmin ? $('sel-f-room').value : '';
   const person = isAdmin ? $('sel-f-person').value : '';
   const mine = allSelections.filter((s) => (!room || roomOf(s) === room) && (!person || s.created_by === person));
-  const rows = mine.filter((s) => kindOf(s) === listKind);
+  const words = $('sel-search').value.toLowerCase().split(/\s+/).filter(Boolean);
+  const found = (s) => { const text = [s.client, s.quote_no, s.phone].join(' ').toLowerCase(); return words.every((w) => text.includes(w)); };
+  const rows = mine.filter((s) => kindOf(s) === listKind && found(s));
   if (isAdmin) summary(mine);
   const tag = (s) => `<span class="room-tag ${roomOf(s)}">${SHOWROOMS[roomOf(s)].code}</span>`;
   $('sel-list').innerHTML = rows.length ? rows.map((s) => `<li class="card sel-row"><button data-sel="${s.id}">
       <span><b>${esc(s.client)}</b>${isAdmin ? tag(s) : ''}${isAdmin ? `<span class="who">by ${esc(staff[s.created_by] || 'Unknown')}</span>` : ''}</span>
       <span class="muted">${s.quote_no ? 'Quote ' + esc(s.quote_no) + ' · ' : ''}${s.total && listKind === 'quotation' ? '₹' + money(s.total) + ' · ' : ''}${new Date(s.updated_at).toLocaleDateString('en-IN')}</span>
-    </button></li>`).join('') : `<li class="muted">${allSelections.some((s) => kindOf(s) === listKind) ? 'Nothing matches these filters.' : `No ${listKind}s yet. Tap "New ${listKind}" to start one.`}</li>`;
+    </button></li>`).join('') : `<li class="muted">${allSelections.some((s) => kindOf(s) === listKind) ? (words.length ? 'No client matches this search.' : 'Nothing matches these filters.') : `No ${listKind}s yet. Tap "New ${listKind}" to start one.`}</li>`;
 }
 
 // admin: how many selections and quotations each person made, and the value quoted
@@ -176,6 +179,7 @@ function summary(rows) {
     + (Object.keys(by).length > 1 ? line('Total', all, 'all') : '');
 }
 
+$('sel-search').addEventListener('input', showSelectionList);
 ['sel-f-room', 'sel-f-person'].forEach((id) => $(id).addEventListener('change', showSelectionList));
 
 $('nav-sel').addEventListener('click', () => openSelections('selection'));
@@ -758,6 +762,30 @@ $('sel-convert').addEventListener('click', async () => {
   window.scrollTo(0, 0);
   draftNote(`Made from the ${from}. The ${from} is still saved as it was.`);
 });
+const copiedNames = [];      // copies made since the list was last loaded
+
+// a second copy under a new name, e.g. "Sharad Pandan (2)"; the original stays as it was
+$('sel-dup').addEventListener('click', async () => {
+  const base = sel.client.trim();
+  if (!base) return alert("Please type the client's name first.");
+  if (!(await saveSelection(true))) return;
+  const root = base.replace(/\s*\(\d+\)$/, '');
+  const taken = new Set([...allSelections.map((s) => s.client || ''), ...copiedNames].map((c) => c.trim().toLowerCase()));
+  let n = 2;
+  while (taken.has(`${root} (${n})`.toLowerCase())) n++;
+  const name = prompt('Name for the copy:', `${root} (${n})`);
+  if (name === null) return;
+  if (!name.trim()) return alert('Please type a name for the copy.');
+  const from = WORD[kindOf(sel)];
+  const copy = JSON.parse(JSON.stringify(sel));
+  sel = { ...copy, id: null, quote_no: '', client: name.trim() };
+  if (!(await saveSelection(true))) return;
+  copiedNames.push(sel.client);
+  renderSelection();
+  window.scrollTo(0, 0);
+  draftNote(`This is the copy "${sel.client}". The first ${from} is still saved as it was.`);
+});
+
 // deletes the whole selection or quotation; one never saved online is only dropped from the phone
 $('sel-delete').addEventListener('click', async () => {
   const what = WORD[kindOf(sel)];
