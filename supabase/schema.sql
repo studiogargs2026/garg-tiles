@@ -299,3 +299,39 @@ end;
 $$;
 revoke execute on function public.next_quote_no(text) from public, anon;
 grant execute on function public.next_quote_no(text) to authenticated;
+
+-- Bathroom fittings (Kohler, Jaquar, Toto, Hindware...), priced per piece at MRP.
+-- Kohler: clp_pct / hvr_pct are each product's own discount on MRP. Jaquar: nrp is the price the
+-- discount may be given on; the quotation still shows only MRP.
+create table if not exists public.fittings (
+  id bigserial primary key,
+  brand text not null,
+  code text not null,
+  name text not null,
+  category text,
+  subcat text,
+  range text,
+  mrp numeric not null,
+  nrp numeric,
+  clp_pct numeric,
+  hvr_pct numeric,
+  thumb_path text,
+  image_path text,
+  unique (brand, code)
+);
+alter table public.fittings enable row level security;
+create policy "staff read fittings" on public.fittings for select using (is_staff());
+create policy "admin write fittings" on public.fittings for all using (is_admin()) with check (is_admin());
+create index if not exists fittings_code_idx on public.fittings (lower(code) text_pattern_ops);
+grant select on public.fittings to authenticated;
+
+create or replace function public.suggest_fittings(q text)
+returns table(id bigint, brand text, code text, name text, mrp numeric, thumb_path text)
+language sql stable set search_path to 'public', 'extensions' as $$
+  select f.id, f.brand, f.code, f.name, f.mrp, f.thumb_path from fittings f
+  where trim(coalesce(q,'')) <> ''
+    and not exists (select 1 from regexp_split_to_table(lower(trim(q)), '\s+') w
+                    where position(w in lower(f.brand || ' ' || f.code || ' ' || f.name || ' ' || coalesce(f.range,'') || ' ' || coalesce(f.category,''))) = 0)
+  order by lower(f.code) like lower(trim(q)) || '%' desc, f.thumb_path is not null desc, length(f.name), f.code
+  limit 8
+$$;
