@@ -123,6 +123,46 @@ function amountOf(it) {
   return Math.round((qty || 0) * (Number(it.rate) || 0) * (1 - discOf(it) / 100));
 }
 
+// ---------- bathroom fittings ----------
+
+// Fittings are priced per piece at MRP. Kohler's CLP and HVR are each product's own discount on
+// MRP. Jaquar can instead be discounted on NRP: the quotation still shows only MRP and the
+// discount on MRP that gives the same net rate (MRP 100, NRP 90, 10% on NRP -> net 81 -> 19%).
+function fitItem(f) {
+  const it = { kind: 'fit', fid: f.id, brand: f.brand, code: f.code, name: f.name, pdfName: f.name, role: 'Fitting',
+    category: f.category, thumb_path: f.thumb_path, image_path: f.image_path, qty: 1, unit: 'Pcs', rate: Number(f.mrp) || '',
+    nrp: f.nrp == null ? null : Number(f.nrp), clp: f.clp_pct == null ? null : Number(f.clp_pct),
+    hvr: f.hvr_pct == null ? null : Number(f.hvr_pct), base: 'mrp', disc: '', nrpDisc: '' };
+  setDisc(it, sel.data.discAll || '');
+  return it;
+}
+
+// the discount typed for an item: on NRP for a Jaquar fitting priced on NRP, otherwise on the rate
+function setDisc(it, v) {
+  if (it.kind === 'fit' && it.base === 'nrp') { it.nrpDisc = v; it.disc = nrpDisc(it); } else it.disc = v;
+}
+
+function nrpDisc(it) {
+  const mrp = Number(it.rate) || 0, nrp = Number(it.nrp) || mrp;
+  if (!mrp) return '';
+  const net = nrp * (1 - Math.min(100, Math.max(0, Number(it.nrpDisc) || 0)) / 100);
+  const d = (1 - net / mrp) * 100;
+  return d > 0.005 ? d : '';
+}
+
+// 19.0000001 -> "19%", 25.456 -> "25.46%"
+function pct(d) {
+  return `${Math.round(Number(d) * 100) / 100}%`;
+}
+
+function fitNote(it) {
+  const net = Math.round((Number(it.rate) || 0) * (1 - discOf(it) / 100) * 100) / 100;
+  if (it.base === 'nrp') return `Quotation shows MRP ₹${money(it.rate)}, discount ${pct(discOf(it))}, net ₹${money(net)} each`;
+  return discOf(it) ? `Net ₹${money(net)} each` : '';
+}
+
+const isFit = (it) => it.kind === 'fit';
+
 function money(n) {
   return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
@@ -268,12 +308,40 @@ function renderSelection() {
         <button type="button" class="ghost small" data-act="add-other">+ Product not in the app</button>
       </div>
     </div>`).join('') || '<p class="muted">Add the first area, like "Master Washroom".</p>';
+  const fits = d.areas.flatMap((a) => a.items).filter(isFit);
+  $('fit-prices').hidden = !fits.length;
+  $('fit-kohler').hidden = !fits.some((it) => it.clp != null || it.hvr != null);
+  $('fit-jaquar').hidden = !fits.some((it) => it.nrp);
   refreshThumbs();
   updateTotal();
   keepLocal(true);
 }
 
 function itemHtml(it, ii) {
+  if (isFit(it)) {
+    const onNrp = it.base === 'nrp';
+    return `<div class="item fit" data-item="${ii}">
+      <div class="item-top">
+        <img class="sel-thumb" data-thumb="${esc(it.thumb_path || '')}" alt="">
+        <div class="grow"><b>${esc(it.name)}</b><div class="muted">${esc(it.brand)} · ${esc(it.code)}</div></div>
+        <button type="button" class="link danger" data-act="del-item">Remove</button>
+      </div>
+      <label>Name in PDF<input data-f="pdfName" value="${esc(it.pdfName)}"></label>
+      <div class="qty-row">
+        <label>Qty<input data-f="qty" type="number" inputmode="decimal" value="${esc(it.qty)}"></label>
+        <label>Unit<select data-f="unit">${UNITS.map((u) => `<option${u === it.unit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
+        <label class="q-only">MRP ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
+      </div>
+      <div class="qty-row q-only">
+        ${it.nrp ? `<label>Discount on<select data-f="base"><option value="mrp"${onNrp ? '' : ' selected'}>MRP</option><option value="nrp"${onNrp ? ' selected' : ''}>NRP ₹${money(it.nrp)}</option></select></label>` : ''}
+        <label class="disc">Discount %<input data-f="${onNrp ? 'nrpDisc' : 'disc'}" type="number" inputmode="decimal" value="${esc(onNrp ? it.nrpDisc ?? '' : it.disc ?? '')}" placeholder="0"></label>
+      </div>
+      ${it.clp != null || it.hvr != null ? `<div class="fit-btns q-only">${it.clp != null ? `<button type="button" class="ghost small" data-act="fit-clp">CLP ${pct(it.clp)}</button>` : ''}${it.hvr != null ? `<button type="button" class="ghost small" data-act="fit-hvr">HVR ${pct(it.hvr)}</button>` : ''}</div>` : ''}
+      <p class="muted fit-note q-only">${fitNote(it)}</p>
+      <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
+      <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
+    </div>`;
+  }
   if (it.kind === 'other') {
     return `<div class="item other" data-item="${ii}">
       <div class="item-top">
@@ -353,8 +421,10 @@ $('sel-areas').addEventListener('input', (e) => {
   if (f === 'area-name') a.name = v;
   else if (it && f === 'pdfName') it.pdfName = v;
   else if (it && (f === 'desc' || f === 'size')) it[f] = v;
-  else if (it && (f === 'rate' || f === 'qty' || f === 'disc')) it[f] = v;
+  else if (it && (f === 'rate' || f === 'qty' || f === 'disc')) { it[f] = v; if (f === 'rate' && it.base === 'nrp') it.disc = nrpDisc(it); }
+  else if (it && f === 'nrpDisc') setDisc(it, v);
   else return;
+  if (it && isFit(it)) itemEl.querySelector('.fit-note').textContent = fitNote(it);
   if (itemEl) itemEl.querySelector('.amount').innerHTML = itemEl.querySelector('.amount').innerHTML.replace(/Amount: ₹[\d,]*/, `Amount: ₹${money(amountOf(it))}`);
   updateTotal();
 });
@@ -366,7 +436,11 @@ $('sel-areas').addEventListener('change', (e) => {
   const v = e.target.value;
   if (f === 'photo') return addPhoto(it, e.target.files[0]);
   if (f === 'role' || f === 'unit') it[f] = v;
-  else if (f === 'pick') {
+  else if (f === 'base') {
+    const typed = it.base === 'nrp' ? it.nrpDisc : it.disc;     // the number typed carries over
+    it.base = v;
+    setDisc(it, typed);
+  } else if (f === 'pick') {
     it.pick = Number(v);
     delete it.pcs;            // a new size has its own packing
     it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || it.rate;
@@ -392,6 +466,11 @@ $('sel-areas').addEventListener('click', (e) => {
   } else if (act === 'del-item') a.items.splice(Number(itemEl.dataset.item), 1);
   else if (act === 'add-other') { target = ai; a.items.push({ kind: 'other', desc: '', role: 'Other', size: '', qty: '', unit: 'Pcs', rate: '', photo: null, disc: sel.data.discAll || '' }); }
   else if (act === 'add-tile') { target = ai; return startPicking(ai); }
+  else if (act === 'fit-clp' || act === 'fit-hvr') {
+    const it = a.items[Number(itemEl.dataset.item)];
+    it.base = 'mrp';
+    it.disc = act === 'fit-clp' ? it.clp : it.hvr;
+  }
   else return;
   renderSelection();
 });
@@ -414,10 +493,31 @@ $('sel-disc-apply').addEventListener('click', () => {
   const items = sel.data.areas.flatMap((a) => a.items);
   if (!items.length) return alert('Add products first.');
   sel.data.discAll = v;
-  items.forEach((it) => (it.disc = d || ''));
+  items.forEach((it) => setDisc(it, d || ''));
   renderSelection();
   changed(true);
   flash(d ? `${d}% discount put on all ${items.length} items` : 'Discount taken off all items');
+});
+// one tap for all of a brand's fittings: Kohler's own CLP or HVR discount, or Jaquar on MRP or NRP
+$('fit-prices').addEventListener('click', (e) => {
+  const how = e.target.dataset.fit;
+  if (!how) return;
+  const items = sel.data.areas.flatMap((a) => a.items).filter((it) => isFit(it) && (it.clp != null || it.hvr != null));
+  items.forEach((it) => { it.base = 'mrp'; it.disc = how === 'none' ? '' : (it[how] ?? it.clp ?? ''); });
+  renderSelection();
+  changed(true);
+  const missing = how === 'hvr' ? items.filter((it) => it.hvr == null).length : 0;
+  flash(how === 'none' ? 'Discount taken off the Kohler fittings'
+    : `${how.toUpperCase()} discount put on ${items.length} Kohler fittings${missing ? ` (${missing} have no HVR, they got CLP)` : ''}`);
+});
+$('fit-jq-apply').addEventListener('click', () => {
+  const base = $('fit-jq-base').value;
+  const v = Math.min(100, Math.max(0, Number($('fit-jq-disc').value) || 0)) || '';
+  const items = sel.data.areas.flatMap((a) => a.items).filter((it) => isFit(it) && it.nrp);
+  items.forEach((it) => { it.base = base; setDisc(it, v); });
+  renderSelection();
+  changed(true);
+  flash(`${v || 0}% on ${base.toUpperCase()} put on ${items.length} Jaquar fittings`);
 });
 $('sel-gst').addEventListener('change', (e) => { sel.data.gst = e.target.value; $('sel-gst-rate-wrap').hidden = e.target.value === 'in'; });
 $('sel-gst-rate').addEventListener('input', (e) => (sel.data.gstRate = Number(e.target.value) || 18));
@@ -564,26 +664,39 @@ $('qa-q').addEventListener('input', () => {
   if (!q) return hideQuick();
   qaTimer = setTimeout(async () => {
     const turn = ++qaTurn;
-    const { data } = await db.rpc('suggest_tiles', { q, p_brand: null, p_size: null });
+    const [{ data: tiles }, { data: fits }] = await Promise.all([
+      db.rpc('suggest_tiles', { q, p_brand: null, p_size: null }),
+      db.rpc('suggest_fittings', { q }),
+    ]);
     if (turn !== qaTurn) return;
-    if (!data?.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
+    const data = [...(tiles || []), ...(fits || []).map((f) => ({ ...f, fit: true }))];
+    if (!data.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
     const urls = await signedUrls(data.map((t) => t.thumb_path));
     if (turn !== qaTurn) return;
-    $('qa-list').innerHTML = data.map((t) => `<li><button type="button" data-id="${t.id}">
+    $('qa-list').innerHTML = data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
       ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
-      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}</span></span></button></li>`).join('');
+      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ` · <span class="fit-code">${esc(t.code)} · MRP ₹${money(t.mrp)}</span>` : ''}</span></span></button></li>`).join('');
     $('qa-list').hidden = false;
   }, 200);
 });
 
 $('qa-list').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-id]');
+  const btn = e.target.closest('button[data-id], button[data-fit]');
   if (!btn) return;
   hideQuick();
   $('qa-q').value = '';
   $('qa-q').focus();
   if (!sel.data.areas.length) { sel.data.areas.push({ name: '', items: [] }); target = 0; }
   const area = sel.data.areas[target];
+  if (btn.dataset.fit) {
+    const { data: f } = await db.from('fittings').select('*').eq('id', Number(btn.dataset.fit)).single();
+    if (!f) return alert('Could not add it. Check your internet.');
+    area.items.push(fitItem(f));
+    renderSelection();
+    changed(true);
+    $('qa-msg').textContent = `Added ${f.brand} ${f.code} to ${area.name || `Area ${target + 1}`}`;
+    return;
+  }
   const id = Number(btn.dataset.id);
   const [{ data: t }, { data: offers }] = await Promise.all([
     db.from('tiles').select('id, brand, name, image_path, thumb_path').eq('id', id).single(),
@@ -909,6 +1022,7 @@ function sizeText(o) {
 
 function tileDetails(it) {
   if (it.kind === 'other') return it.size || '';
+  if (isFit(it)) return `${it.brand}  ·  ${it.code}`;
   const o = offerOf(it);
   return [sizeText(o), finishTag(o.finish) && o.finish].filter(Boolean).join('  ·  ');
 }
@@ -951,15 +1065,15 @@ function busy(on, text = 'Making the PDF…') {
 
 // what the selection PDF shows: tiles, and products not in the app once they have a name
 function tileItems(area) {
-  return area.items.filter((it) => it.kind === 'tile' || (it.desc || '').trim());
+  return area.items.filter((it) => it.kind === 'tile' || isFit(it) || (it.desc || '').trim());
 }
 
 function itemName(it) {
-  return it.kind === 'tile' ? it.pdfName || it.name : it.desc.trim();
+  return it.kind === 'tile' || isFit(it) ? it.pdfName || it.name : it.desc.trim();
 }
 
 function itemPicture(it) {
-  return it.kind === 'tile' ? it.image_path : it.photo;
+  return it.kind === 'tile' || isFit(it) ? it.image_path || it.thumb_path : it.photo;
 }
 
 // ---------- selection PDF ----------
@@ -1152,16 +1266,27 @@ async function quotationPdf() {
     const shownRate = (r) => (gstMode === 'split' ? r / (1 + gstRate / 100) : r);
     const fmtDate = (t) => new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // the columns ticked for this quotation; the description takes the room the others leave
-    const cols = [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
-      ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['disc', 40, 'DISC.'], ['amount', 74, 'AMOUNT']]
-      .filter(([k]) => k === 'desc' || (show[k] ?? true))
-      .filter(([k]) => k !== 'disc' || rows.some((a) => a.items.some((it) => discOf(it)))).map(([k, w, head]) => ({ k, w, head }));
-    cols.find((c) => c.k === 'desc').w = W - cols.reduce((s, c) => s + c.w, 0);
-    let cx = M;
-    for (const c of cols) { c.x = cx; cx += c.w; c.right = cx; }
-    const col = Object.fromEntries(cols.map((c) => [c.k, c]));
-    const pics = !!col.pic;
+    // Tiles (and products not in the app) come first, then bathroom fittings in their own table,
+    // each with the columns ticked for this quotation; the description takes the room the others leave
+    const sections = [
+      { title: 'TILES', pick: (a) => a.items.filter((it) => !isFit(it)),
+        list: [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
+          ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['disc', 40, 'DISC.'], ['amount', 74, 'AMOUNT']] },
+      { title: 'BATHROOM FITTINGS', pick: (a) => a.items.filter(isFit),
+        list: [['serial', 22, '#'], ['pic', 50, 'PRODUCT'], ['desc', 0, 'DESCRIPTION'], ['qty', 50, 'QTY'],
+          ['rate', 64, gstMode === 'split' ? 'MRP (EX. GST)' : 'MRP'], ['disc', 44, 'DISC.'], ['amount', 74, 'AMOUNT']] },
+    ].filter((sec) => rows.some((a) => sec.pick(a).length));
+    let cols, col, pics, descW;
+    const useCols = (sec) => {
+      cols = sec.list.filter(([k]) => k === 'desc' || (show[k] ?? true))
+        .filter(([k]) => k !== 'disc' || rows.some((a) => sec.pick(a).some((it) => discOf(it)))).map(([k, w, head]) => ({ k, w, head }));
+      cols.find((c) => c.k === 'desc').w = W - cols.reduce((sum, c) => sum + c.w, 0);
+      let cx = M;
+      for (const c of cols) { c.x = cx; cx += c.w; c.right = cx; }
+      col = Object.fromEntries(cols.map((c) => [c.k, c]));
+      pics = !!col.pic;
+      descW = col.desc.w - 12;
+    };
     let y = 0;
 
     // letterhead
@@ -1209,71 +1334,86 @@ async function quotationPdf() {
       y = 40;
       return true;
     };
-    tableHead();
 
     let serial = 0, subtotal = 0, withGst = 0, n = 0;
-    const count = rows.reduce((s, a) => s + a.items.length, 0);
-    const descW = col.desc.w - 12;
-    const areaSums = [];
-    for (const area of rows) {
-      const before = subtotal;
-      if (room(24 + 34)) tableHead();
-      doc.setFillColor(...C.sand); doc.rect(M, y, W, 24, 'F');
-      pen(doc, 'Playfair', 'bold', 11, C.main);
-      doc.text(area.name || 'Selection', M + 8, y + 16);
-      y += 24;
-      for (const it of area.items) {
-        busy(true, `Making the quotation… ${++n} of ${count}`);
-        const tile = it.kind === 'tile';
-        const o = tile ? offerOf(it) : {};
-        const rate = Number(it.rate) || 0;
-        const qty = tile ? Number(it.sqft) || 0 : Number(it.qty) || 0;
-        // with the discount column the rate is before discount; without it, the rate already has it taken off
-        const d = discOf(it);
-        const net = Math.round(shownRate(rate) * (1 - d / 100) * 100) / 100;
-        const shown = col.disc ? Math.round(shownRate(rate) * 100) / 100 : net;
-        const amt = Math.round(qty * net);
-        subtotal += amt;
-        withGst += amountOf(it);
-        pen(doc, 'Poppins', 'bold', 9, C.ink);
-        const name = doc.splitTextToSize(tile ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
-        const detail = [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && it.role === 'Other') && it.role].filter(Boolean).join('  ·  ');
-        pen(doc, 'Poppins', 'normal', 7.5, C.grey);
-        const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
-        const sizeLine = tile ? sizeText(o) : (it.size || '').trim();
-        const size = col.size && sizeLine ? doc.splitTextToSize(sizeLine, col.size.w - 10).slice(0, 3) : [];
-        const picPath = tile ? it.thumb_path || it.image_path : it.photo;
-        const textH = name.length * 11 + det.length * 9.5;
-        const h = Math.max(pics && picPath ? 52 : 28, textH + 16, size.length * 9.5 + 16);
-        if (room(h)) tableHead();
-        const mid = y + h / 2;
-        if (col.serial) { pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(String(++serial), col.serial.x + 6, mid + 3); }
-        if (pics && picPath) {
-          const pic = await pictureData(picPath, { maxSide: 240, aspect: 1 });
-          if (pic) doc.addImage(pic.src, 'JPEG', col.pic.x + 4, y + (h - 42) / 2, 42, 42);
-        }
-        let ty = mid - textH / 2 + 8;
-        pen(doc, 'Poppins', 'bold', 9, C.ink);
-        doc.text(name, col.desc.x + 6, ty);
-        ty += name.length * 11;
-        pen(doc, 'Poppins', 'normal', 7.5, C.grey);
-        if (det.length) doc.text(det, col.desc.x + 6, ty - 1);
-        if (size.length) { pen(doc, 'Poppins', 'normal', 7.8, C.ink); doc.text(size, col.size.x + 6, mid - (size.length * 9.5) / 2 + 7); }
-        pen(doc, 'Poppins', 'normal', 8.8, C.ink);
-        if (col.boxes && tile && it.boxes) doc.text(String(it.boxes), col.boxes.right - 6, mid + 3, { align: 'right' });
-        if (col.qty && qty) doc.text(tile ? `${money(qty)} sq ft` : `${qty} ${it.unit || ''}`.trim(), col.qty.right - 6, mid + 3, { align: 'right' });
-        if (col.rate && rate) {
-          doc.text(rs(shown, shown % 1 ? 2 : 0), col.rate.right - 6, mid + (tile ? 0 : 3), { align: 'right' });
-          if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', col.rate.right - 6, mid + 9, { align: 'right' }); }
-        }
-        pen(doc, 'Poppins', 'normal', 8.8, C.ink);
-        if (col.disc && d) doc.text(`${d}%`, col.disc.right - 6, mid + 3, { align: 'right' });
-        pen(doc, 'Poppins', 'bold', 8.8, C.ink);
-        if (col.amount && amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
-        doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
-        y += h;
+    const count = rows.reduce((sum, a) => sum + a.items.length, 0);
+    const areaSums = rows.map((a) => [a.name || 'Selection', 0]);
+    for (const sec of sections) {
+      useCols(sec);
+      if (sections.length > 1) {
+        if (!room(30 + 22 + 24 + 34) && sec !== sections[0]) y += 14;
+        pen(doc, 'Poppins', 'bold', 9, C.accentDark);
+        doc.text(sec.title, M, y + 14, { charSpace: 1.5 });
+        y += 22;
       }
-      areaSums.push([area.name || 'Selection', subtotal - before]);
+      tableHead();
+      for (const [ai, area] of rows.entries()) {
+        const items = sec.pick(area);
+        if (!items.length) continue;
+        const before = subtotal;
+        if (room(24 + 34)) tableHead();
+        doc.setFillColor(...C.sand); doc.rect(M, y, W, 24, 'F');
+        pen(doc, 'Playfair', 'bold', 11, C.main);
+        doc.text(area.name || 'Selection', M + 8, y + 16);
+        y += 24;
+        for (const it of items) {
+          busy(true, `Making the quotation… ${++n} of ${count}`);
+          const tile = it.kind === 'tile', fit = isFit(it);
+          const o = tile ? offerOf(it) : {};
+          const rate = Number(it.rate) || 0;
+          const qty = tile ? Number(it.sqft) || 0 : Number(it.qty) || 0;
+          // with the discount column the rate is before discount; without it, the rate already has it taken off
+          const d = discOf(it);
+          const net = Math.round(shownRate(rate) * (1 - d / 100) * 100) / 100;
+          const shown = col.disc ? Math.round(shownRate(rate) * 100) / 100 : net;
+          const amt = Math.round(qty * net);
+          subtotal += amt;
+          withGst += amountOf(it);
+          pen(doc, 'Poppins', 'bold', 9, C.ink);
+          const name = doc.splitTextToSize(tile || fit ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
+          const detail = fit ? `${it.brand}  ·  ${it.code}`
+            : [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && it.role === 'Other') && it.role].filter(Boolean).join('  ·  ');
+          pen(doc, 'Poppins', 'normal', 7.5, C.grey);
+          const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
+          const sizeLine = tile ? sizeText(o) : (it.size || '').trim();
+          const size = col.size && sizeLine ? doc.splitTextToSize(sizeLine, col.size.w - 10).slice(0, 3) : [];
+          const picPath = tile || fit ? it.thumb_path || it.image_path : it.photo;
+          const textH = name.length * 11 + det.length * 9.5;
+          const h = Math.max(pics && picPath ? 52 : 28, textH + 16, size.length * 9.5 + 16);
+          if (room(h)) tableHead();
+          const mid = y + h / 2;
+          if (col.serial) { pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(String(++serial), col.serial.x + 6, mid + 3); }
+          if (pics && picPath) {
+            // tiles are cut square; a fitting is shown whole, fitted into the square
+            const pic = await pictureData(picPath, { maxSide: 240, aspect: fit ? null : 1 });
+            if (pic) {
+              const k = 42 / Math.max(pic.w, pic.h), pw = pic.w * k, ph = pic.h * k;
+              doc.addImage(pic.src, 'JPEG', col.pic.x + 4 + (42 - pw) / 2, y + (h - ph) / 2, pw, ph);
+            }
+          }
+          let ty = mid - textH / 2 + 8;
+          pen(doc, 'Poppins', 'bold', 9, C.ink);
+          doc.text(name, col.desc.x + 6, ty);
+          ty += name.length * 11;
+          pen(doc, 'Poppins', 'normal', 7.5, C.grey);
+          if (det.length) doc.text(det, col.desc.x + 6, ty - 1);
+          if (size.length) { pen(doc, 'Poppins', 'normal', 7.8, C.ink); doc.text(size, col.size.x + 6, mid - (size.length * 9.5) / 2 + 7); }
+          pen(doc, 'Poppins', 'normal', 8.8, C.ink);
+          if (col.boxes && tile && it.boxes) doc.text(String(it.boxes), col.boxes.right - 6, mid + 3, { align: 'right' });
+          if (col.qty && qty) doc.text(tile ? `${money(qty)} sq ft` : `${qty} ${it.unit || ''}`.trim(), col.qty.right - 6, mid + 3, { align: 'right' });
+          if (col.rate && rate) {
+            doc.text(rs(shown, shown % 1 ? 2 : 0), col.rate.right - 6, mid + (tile ? 0 : 3), { align: 'right' });
+            if (tile) { pen(doc, 'Poppins', 'normal', 6.8, C.grey); doc.text('per sq ft', col.rate.right - 6, mid + 9, { align: 'right' }); }
+          }
+          pen(doc, 'Poppins', 'normal', 8.8, C.ink);
+          if (col.disc && d) doc.text(pct(d), col.disc.right - 6, mid + 3, { align: 'right' });
+          pen(doc, 'Poppins', 'bold', 8.8, C.ink);
+          if (col.amount && amt) doc.text(rs(amt), R - 6, mid + 3, { align: 'right' });
+          doc.setDrawColor(...C.line); doc.setLineWidth(0.6); doc.line(M, y + h, R, y + h);
+          y += h;
+        }
+        areaSums[ai][1] += subtotal - before;
+      }
     }
 
     // the ticked lines, e.g. "Cartage charges will be extra"
