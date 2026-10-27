@@ -129,6 +129,26 @@
           <button id="sel-disc-apply" type="button" class="ghost small">Apply to all</button>
         </div>
         <p class="muted q-only disc-note">Products added later get it too. You can still change any single item's discount in its own box.</p>
+        <div id="fit-prices" class="fit-prices q-only" hidden>
+          <h4>Bathroom fittings prices</h4>
+          <div id="fit-kohler" class="fit-brand">
+            <p><b>Kohler</b> <span class="muted">rate is always MRP</span></p>
+            <div class="fit-btns">
+              <button type="button" class="ghost small" data-fit="clp">CLP discount</button>
+              <button type="button" class="ghost small" data-fit="hvr">HVR discount</button>
+              <button type="button" class="ghost small" data-fit="none">No discount</button>
+            </div>
+          </div>
+          <div id="fit-jaquar" class="fit-brand">
+            <p><b>Jaquar</b> <span class="muted">quotation shows MRP, never NRP</span></p>
+            <div class="qty-row disc-all">
+              <label>Discount on<select id="fit-jq-base"><option value="mrp">MRP</option><option value="nrp">NRP</option></select></label>
+              <label>Discount %<input id="fit-jq-disc" type="number" inputmode="decimal" placeholder="e.g. 10"></label>
+              <button id="fit-jq-apply" type="button" class="ghost small">Apply</button>
+            </div>
+          </div>
+          <p class="muted disc-note">These change all of that brand's fittings in this quotation. You can still change each one in its own box.</p>
+        </div>
         <label>Notes (printed in both PDFs)<textarea id="sel-notes" rows="3" placeholder="e.g. Skirting in the same tile. Delivery after 10 days."></textarea></label>
         <p id="sel-total" class="price"></p>
       </div>
@@ -170,7 +190,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">SalesDesk by Garg · App version 28</p>
+      <p class="muted version">SalesDesk by Garg · App version 30</p>
     </section>
 
     <section id="photo-view" hidden>

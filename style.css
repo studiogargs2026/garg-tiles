@@ -131,6 +131,13 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .disc-all button { flex: none; margin-bottom: 8px; padding: 12px 14px; }
 .disc-note { margin: -4px 0 10px; font-size: .82rem; }
 .qty-row label.disc { flex: 1; }
+.fit-prices h4 { margin: 14px 0 6px; }
+.fit-brand { border-top: 1px solid var(--line, #eee); padding-top: 8px; margin-bottom: 6px; }
+.fit-brand p { margin: 0 0 6px; }
+.fit-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.fit-btns button.on { background: var(--accent, #f08a5d); color: #fff; }
+.fit-note { font-size: .82rem; margin: 2px 0 6px; }
+.suggest .fit-code { font-size: .8rem; }
 .qty-row > span { flex: 2; }
 .qty-row > .pcs-note { align-self: center; font-size: 13px; }
 .sel-search { margin: 12px 0 0; }
