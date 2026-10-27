@@ -530,7 +530,7 @@ document.querySelectorAll('[name=sel-names]').forEach((r) => r.addEventListener(
 // showroom's usual ones, which admins can change from any quotation.
 const Q_COLS = [['serial', 'Sr. no.'], ['pic', 'Tile picture'], ['size', 'Size'], ['finish', 'Finish'], ['role', 'Used as (wall, floor…)'],
   ['boxes', 'Boxes'], ['qty', 'Quantity (sq ft)'], ['rate', 'Rate per sq ft'], ['disc', 'Discount'], ['amount', 'Amount'],
-  ['mrp', 'MRP (fittings)'], ['nrp', 'NRP (Jaquar fittings)']];
+  ['mrp', 'MRP (fittings)'], ['nrp', 'NRP (Jaquar fittings)'], ['code', 'Product code (fittings)']];
 // NRP is printed only on quotations where it is ticked (Kirti 2026-10-27); the rest start with it off
 const COL_DEFAULT = { nrp: false };
 const Q_PARTS = [['dates', 'Date and valid until'], ['areas', 'Area-wise summary'], ['totals', 'Totals and grand total'], ['words', 'Amount in words'],
@@ -1017,12 +1017,12 @@ let fontFiles = null;
 const FONTS = [['Poppins-400.ttf', 'Poppins', 'normal'], ['Poppins-600.ttf', 'Poppins', 'bold'], ['Playfair-700.ttf', 'Playfair', 'bold']];
 
 // Poppins prints the ₹ sign; Playfair (close to the logo's lettering) is for headings only
-async function startPdf(options) {
+async function startPdf(options, roomId = roomOf(sel)) {
   const doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4', ...options });
   fontFiles ||= await Promise.all(FONTS.map(async ([f]) => (await staticData('vendor/fonts/' + f)).split(',')[1]));
   FONTS.forEach(([f, name, style], i) => { doc.addFileToVFS(f, fontFiles[i]); doc.addFont(f, name, style); });
-  const room = SHOWROOMS[roomOf(sel)];
-  C = PALETTES[roomOf(sel)];
+  const room = SHOWROOMS[roomId];
+  C = PALETTES[roomId];
   logoData = logos[room.logo] ||= await staticData(room.logo);
   LOGO_RATIO = room.logoRatio;
   return doc;
@@ -1067,7 +1067,7 @@ function sizeText(o) {
 
 function tileDetails(it) {
   if (it.kind === 'other') return it.size || '';
-  if (isFit(it)) return `${it.brand}  ·  ${it.code}`;
+  if (isFit(it)) return [it.brand, sel.data.q?.cols?.code !== false && it.code].filter(Boolean).join('  ·  ');
   const o = offerOf(it);
   return [sizeText(o), finishTag(o.finish) && o.finish].filter(Boolean).join('  ·  ');
 }
@@ -1424,7 +1424,7 @@ async function quotationPdf() {
           withGst += amountOf(it);
           pen(doc, 'Poppins', 'bold', 9, C.ink);
           const name = doc.splitTextToSize(tile || fit ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
-          const detail = fit ? `${it.brand}  ·  ${it.code}`
+          const detail = fit ? [it.brand, show.code !== false && it.code].filter(Boolean).join('  ·  ')
             : [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && it.role === 'Other') && it.role].filter(Boolean).join('  ·  ');
           pen(doc, 'Poppins', 'normal', 7.5, C.grey);
           const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
