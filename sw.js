@@ -1,6 +1,6 @@
 // Keeps the app shell on the phone so it opens instantly; tile data always comes fresh.
-const CACHE = 'garg-tiles-v34';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'selection.js', 'photo.js', 'vendor/jspdf.umd.min.js', 'icons/gs-logo.jpg', 'icons/kp-logo.jpg', 'icons/gsn-logo.jpg', 'icons/kp-logo-light.jpg', 'icons/brand-strip.jpg', 'vendor/fonts/Poppins-400.ttf', 'vendor/fonts/Poppins-600.ttf', 'vendor/fonts/Playfair-700.ttf', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon-192.png'];
+const CACHE = 'garg-tiles-v35';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'selection.js', 'photo.js', 'stock.js', 'vendor/jspdf.umd.min.js', 'icons/gs-logo.jpg', 'icons/kp-logo.jpg', 'icons/gsn-logo.jpg', 'icons/kp-logo-light.jpg', 'icons/brand-strip.jpg', 'vendor/fonts/Poppins-400.ttf', 'vendor/fonts/Poppins-600.ttf', 'vendor/fonts/Playfair-700.ttf', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();         // a new version takes over at once instead of waiting for every tab to close
