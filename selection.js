@@ -813,6 +813,19 @@ window.pickTile = async function (id) {
   return true;
 };
 
+// the same for a bathroom fitting tapped on the search screen
+window.pickFit = async function (id) {
+  if (pickArea === null || current !== 'search-view') return false;
+  const area = sel.data.areas[pickArea];
+  stopPicking();
+  const { data: f } = await db.from('fittings').select('*').eq('id', id).single();
+  if (f) area.items.push(fitItem(f));
+  history.back();
+  renderSelection();
+  changed(true);
+  return true;
+};
+
 function tileItem(t, offers, role) {
   const it = { kind: 'tile', ...t, offers: sortOffers(offers), pick: 0, role, sqft: '', boxes: '', code: null, disc: sel.data.discAll || '' };
   it.rate = Math.round(Number(offerOf(it).selling_price) || 0) || '';
