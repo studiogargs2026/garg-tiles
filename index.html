@@ -43,6 +43,7 @@
       <div id="showroom-picks" class="showrooms">
         <button type="button" class="showroom-pick gs" data-room="gs"><img src="icons/gs-logo.jpg" alt=""><span>Garg's Studio</span></button>
         <button type="button" class="showroom-pick kp" data-room="kp"><img src="icons/kp-logo-light.jpg" alt=""><span>KP Enterprises</span></button>
+        <button type="button" class="showroom-pick gsn" data-room="gsn"><img src="icons/gsn-logo.jpg" alt=""><span>Garg &amp; Sons</span></button>
       </div>
     </section>
 
@@ -83,7 +84,7 @@
       <button id="sel-unsaved" type="button" class="ghost" hidden>Continue unfinished selection</button>
       <div id="sel-admin" class="card pad" hidden>
         <div class="filters">
-          <select id="sel-f-room" aria-label="Showroom"><option value="">Both showrooms</option><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option></select>
+          <select id="sel-f-room" aria-label="Showroom"><option value="">All showrooms</option><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option><option value="gsn">Garg &amp; Sons</option></select>
           <select id="sel-f-person" aria-label="Employee"><option value="">Everyone</option></select>
         </div>
                 <table id="sel-by-person" class="by-person"></table>
@@ -239,7 +240,7 @@
       <p class="muted">Printed on each showroom's quotations.</p>
       <form id="biz-form">
         <label>Showroom
-          <select id="biz-room"><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option></select>
+          <select id="biz-room"><option value="gs">Garg's Studio</option><option value="kp">KP Enterprises</option><option value="gsn">Garg &amp; Sons</option></select>
         </label>
         <label>Account holder <input data-bank="title" autocomplete="off"></label>
         <label>Bank name <input data-bank="name" autocomplete="off"></label>

@@ -71,8 +71,9 @@ async function signedUrls(paths) {
 // Two showrooms, each with its own logo, colours, letterhead and quote numbers. Everyone picks
 // their showroom after signing in; the phone remembers it until they log out.
 const SHOWROOMS = {
-  gs: { name: "Garg's Studio", logo: 'icons/gs-logo.jpg', logoRatio: 716 / 600, settings: 'business', code: 'GS', color: '#f05a28' },
+  gs: { name: "Garg's Studio", logo: 'icons/gs-logo.jpg', brands: true, logoRatio: 716 / 600, settings: 'business', code: 'GS', color: '#f05a28' },
   kp: { name: 'KP Enterprises', logo: 'icons/kp-logo.jpg', printName: true, logoRatio: 790 / 757, settings: 'business_kp', code: 'KP', color: '#21688a' },
+  gsn: { name: 'Garg & Sons', logo: 'icons/gsn-logo.jpg', brands: true, printName: true, logoRatio: 744 / 759, settings: 'business_gsn', code: 'GSN', color: '#b8902f' },
 };
 const SHOWROOM_KEY = 'garg-showroom';
 let showroom = null;

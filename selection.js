@@ -567,7 +567,7 @@ function renderQuoteSettings() {
   $('q-valid').value = q.validDays;
   $('q-valid-wrap').hidden = !q.parts.dates;
   $('q-cols').innerHTML = Q_COLS.map((c) => box('col', c)).join('');
-  $('q-parts').innerHTML = Q_PARTS.filter(([k]) => k !== 'brands' || roomOf(sel) === 'gs').map((c) => box('part', c)).join('');
+  $('q-parts').innerHTML = Q_PARTS.filter(([k]) => k !== 'brands' || SHOWROOMS[roomOf(sel)].brands).map((c) => box('part', c)).join('');
   $('q-lines').innerHTML = q.lines.map((l, i) => `<div class="q-line${l.on ? '' : ' off'}" data-line="${i}">
       <input type="checkbox" data-f="on"${l.on ? ' checked' : ''} aria-label="Print this line">
       <input type="text" data-f="text" value="${esc(l.text)}" placeholder="e.g. Loading and unloading extra">
@@ -949,6 +949,8 @@ const PALETTES = {
     sand: [244, 232, 218], ink: [40, 24, 28], grey: [118, 102, 106], line: [230, 214, 200], white: [255, 255, 255] },
   kp: { main: [12, 45, 72], accent: [64, 185, 236], accentDark: [33, 104, 138], cream: [243, 248, 252],
     sand: [224, 238, 247], ink: [18, 32, 44], grey: [96, 110, 122], line: [208, 224, 236], white: [255, 255, 255] },
+  gsn: { main: [10, 10, 10], accent: [214, 175, 72], accentDark: [150, 115, 40], cream: [250, 247, 240],
+    sand: [238, 232, 218], ink: [24, 24, 24], grey: [105, 105, 105], line: [222, 214, 198], white: [255, 255, 255] },
 };
 let C = PALETTES.gs;
 
@@ -1529,11 +1531,12 @@ async function quotationPdf() {
       pen(doc, 'Playfair', 'bold', 13, C.main);
       doc.text('Thank you for your business!', PW / 2, y, { align: 'center' });
       pen(doc, 'Poppins', 'normal', 8, C.grey);
-      doc.text(`For any questions about this quotation, call ${biz.phone || ''}${biz.email ? ' or write to ' + biz.email : ''}.`, PW / 2, y + 15, { align: 'center' });
+      const ask = [biz.phone && `call ${biz.phone}`, biz.email && `write to ${biz.email}`].filter(Boolean).join(' or ');
+      if (ask) doc.text(`For any questions about this quotation, ${ask}.`, PW / 2, y + 15, { align: 'center' });
       y += 30;
     }
     // strip of the brands Garg's Studio sells; KP Enterprises gets its own when Kirti sends it
-    if (part.brands && roomOf(sel) === 'gs') {
+    if (part.brands && SHOWROOMS[roomOf(sel)].brands) {
       const stripH = W * 59 / 560;
       room(stripH);
       doc.addImage(await staticData('icons/brand-strip.jpg'), 'JPEG', M, Math.max(y, BOTTOM - stripH), W, stripH);
