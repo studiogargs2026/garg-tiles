@@ -1190,7 +1190,9 @@ function deliverName(text) {
 async function deliver(doc, filename) {
   const blob = doc.output('blob');
   const file = new File([blob], deliverName(filename), { type: 'application/pdf' });
-  if (navigator.canShare?.({ files: [file] })) {
+  // phones and tablets get the share window (WhatsApp, mail…); a computer saves the file in Downloads
+  const phone = matchMedia('(pointer: coarse)').matches;
+  if (phone && navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: file.name }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
   const a = document.createElement('a');
