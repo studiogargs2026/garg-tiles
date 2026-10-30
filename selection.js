@@ -663,31 +663,43 @@ let qaTimer = null;
 let qaTurn = 0;
 function hideQuick() { $('qa-list').hidden = true; qaTurn++; }
 
+// Suggestions come from the phone's own copy of the lists (search.js), at each letter typed.
+// The server answers only before that copy is ready, or to find a tile name typed with a mistake.
+function showQuick(saved, data, turn) {
+  qaSaved = saved;
+  if (!data.length && !saved.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
+  $('qa-list').innerHTML = saved.map((p, k) => `<li><button type="button" data-saved="${k}">
+    ${savedPhotos.get(p.id) ? `<img src="${savedPhotos.get(p.id)}" alt="">` : `<span class="dot" data-photo="${p.id}"></span>`}
+    <span><b>${esc(p.name)}</b> <span class="muted">${esc([p.size, 'added by hand before'].filter(Boolean).join(' · '))}</span></span></button></li>`).join('')
+    + data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
+    ${thumbSpot(t.thumb_path)}
+    <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ` · <span class="fit-code">${esc(t.code)} · MRP ₹${money(t.mrp)}</span>` : ''}</span></span></button></li>`).join('');
+  $('qa-list').hidden = false;
+  fillThumbs($('qa-list'), () => turn === qaTurn);
+  fillSavedPhotos(saved, turn);
+}
+
+async function serverQuick(q, turn) {
+  const [{ data: tiles }, { data: fits }] = await Promise.all([
+    db.rpc('suggest_tiles', { q, p_brand: null, p_size: null }),
+    db.rpc('suggest_fittings', { q }),
+  ]);
+  if (turn !== qaTurn) return;
+  showQuick(findSaved(q), [...(tiles || []), ...(fits || []).map((f) => ({ ...f, fit: true }))], turn);
+}
+
+$('qa-q').addEventListener('focus', loadSaved);
 $('qa-q').addEventListener('input', () => {
   clearTimeout(qaTimer);
   const q = $('qa-q').value.trim();
   if (!q) return hideQuick();
-  qaTimer = setTimeout(async () => {
-    const turn = ++qaTurn;
-    const [{ data: tiles }, { data: fits }, saved] = await Promise.all([
-      db.rpc('suggest_tiles', { q, p_brand: null, p_size: null }),
-      db.rpc('suggest_fittings', { q }),
-      findSaved(q),
-    ]);
-    if (turn !== qaTurn) return;
-    const data = [...(tiles || []), ...(fits || []).map((f) => ({ ...f, fit: true }))];
-    if (!data.length && !saved.length) { $('qa-list').innerHTML = '<li class="muted qa-none">Not found. Use "+ Product not in the app" in the area.</li>'; $('qa-list').hidden = false; return; }
-    const urls = await signedUrls(data.map((t) => t.thumb_path));
-    if (turn !== qaTurn) return;
-    $('qa-list').innerHTML = saved.map((p, k) => `<li><button type="button" data-saved="${k}">
-      ${p.photo ? `<img src="${p.photo}" alt="">` : '<span class="dot"></span>'}
-      <span><b>${esc(p.name)}</b> <span class="muted">${esc([p.size, 'added by hand before'].filter(Boolean).join(' · '))}</span></span></button></li>`).join('')
-      + data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
-      ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
-      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ` · <span class="fit-code">${esc(t.code)} · MRP ₹${money(t.mrp)}</span>` : ''}</span></span></button></li>`).join('');
-    qaSaved = saved;
-    $('qa-list').hidden = false;
-  }, 200);
+  const turn = ++qaTurn;
+  const found = findQuick(q);
+  if (found) {
+    showQuick(findSaved(q), [...found.tiles, ...found.fits.map((f) => ({ ...f, fit: true }))], turn);
+    if (found.tiles.length || found.fits.length || !q.split(/\s+/).some((w) => w.length >= 4)) return;
+  }
+  qaTimer = setTimeout(() => serverQuick(q, turn), found ? 300 : 150);
 });
 
 $('qa-list').addEventListener('click', async (e) => {
@@ -700,7 +712,8 @@ $('qa-list').addEventListener('click', async (e) => {
   const area = sel.data.areas[target];
   if (btn.dataset.saved) {
     const p = qaSaved[Number(btn.dataset.saved)];
-    area.items.push({ kind: 'other', desc: p.name, role: p.role || 'Other', size: p.size || '', qty: '', unit: p.unit || 'Pcs', rate: p.rate ?? '', photo: p.photo || null, disc: sel.data.discAll || '' });
+    const photo = await savedPhoto(p.id);
+    area.items.push({ kind: 'other', desc: p.name, role: p.role || 'Other', size: p.size || '', qty: '', unit: p.unit || 'Pcs', rate: p.rate ?? '', photo: photo || null, disc: sel.data.discAll || '' });
     renderSelection();
     changed(true);
     $('qa-msg').textContent = `Added ${p.name} to ${area.name || `Area ${target + 1}`}`;
@@ -740,13 +753,44 @@ function productKey(name, size) {
   return `${name.trim().toLowerCase()}|${(size || '').trim().toLowerCase()}`;
 }
 
-async function findSaved(q) {
-  const words = q.replace(/[%_,()]/g, ' ').split(/\s+/).filter(Boolean);
+// The list (without pictures) is kept on the phone and fetched again each time the box is tapped;
+// pictures come for the few shown.
+let savedList = [];
+const savedPhotos = new Map();        // id -> picture
+async function loadSaved() {
+  const { data } = await db.from('saved_products').select('id, name, size, role, unit, rate').order('updated_at', { ascending: false });
+  if (data) savedList = data;
+}
+
+function findSaved(q) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
-  let query = db.from('saved_products').select('name, size, role, unit, rate, photo');
-  for (const w of words) query = query.ilike('name', `%${w}%`);
-  const { data } = await query.order('updated_at', { ascending: false }).limit(5);
-  return data || [];
+  return savedList.filter((p) => words.every((w) => p.name.toLowerCase().includes(w))).slice(0, 5);
+}
+
+async function savedPhoto(id) {
+  if (!savedPhotos.has(id)) {
+    const { data } = await db.from('saved_products').select('photo').eq('id', id).maybeSingle();
+    if (!data) return null;
+    savedPhotos.set(id, data.photo || '');
+  }
+  return savedPhotos.get(id);
+}
+
+async function fillSavedPhotos(saved, turn) {
+  const need = saved.filter((p) => !savedPhotos.has(p.id)).map((p) => p.id);
+  if (need.length) {
+    const { data } = await db.from('saved_products').select('id, photo').in('id', need);
+    for (const r of data || []) savedPhotos.set(r.id, r.photo || '');
+  }
+  if (turn !== qaTurn) return;
+  for (const s of $('qa-list').querySelectorAll('[data-photo]')) {
+    const photo = savedPhotos.get(Number(s.dataset.photo));
+    if (!photo) continue;
+    const img = document.createElement('img');
+    img.src = photo; img.alt = '';
+    s.replaceWith(img);
+  }
 }
 
 async function keepProducts() {
@@ -761,7 +805,10 @@ async function keepProducts() {
   if (!fresh.length) return;
   const at = new Date().toISOString();
   const { error } = await db.from('saved_products').upsert(fresh.map(([, r]) => ({ ...r, updated_at: at })), { onConflict: 'key' });
-  if (!error) for (const [k, r] of fresh) keptProducts.set(k, JSON.stringify(r));
+  if (error) return;
+  for (const [k, r] of fresh) keptProducts.set(k, JSON.stringify(r));
+  savedPhotos.clear();
+  loadSaved();
 }
 
 // a picture of a product that is not in the app, kept small inside the selection itself

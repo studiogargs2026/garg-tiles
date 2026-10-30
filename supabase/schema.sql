@@ -369,3 +369,32 @@ create policy "staff edit saved products" on public.saved_products for update to
 create policy "admins remove saved products" on public.saved_products for delete to authenticated using (public.is_admin());
 grant select, insert, delete on public.saved_products to authenticated;
 grant update (name, size, role, unit, rate, photo, updated_at) on public.saved_products to authenticated;
+
+-- Instant suggestions (2026-10-30): each phone keeps one copy of every tile and fitting name, so the
+-- search boxes suggest products while typing without asking the server each time. The phone asks
+-- search_index_version() when the app opens and downloads the lists again only when it changed.
+create or replace function public.search_index_version() returns text
+language sql stable security definer set search_path = public as $$
+  select case when is_staff() then md5(concat_ws('|',
+    (select concat_ws(',', count(*), max(id), sum(length(name)), count(thumb_path), sum(length(coalesce(thumb_path, '')))) from tiles),
+    (select concat_ws(',', count(*), max(id), sum(mrp), sum(length(name)), sum(length(code)), count(thumb_path),
+            sum(length(coalesce(thumb_path, ''))), sum(length(coalesce(range, '') || coalesce(category, '')))) from fittings))) end
+$$;
+
+-- tiles: [id, brand, name, thumb_path]
+create or replace function public.search_index_tiles() returns json
+language sql stable security definer set search_path = public as $$
+  select case when is_staff() then (select json_agg(json_build_array(id, brand, name, thumb_path) order by id) from tiles) end
+$$;
+
+-- fittings: [id, brand, code, name, mrp, thumb_path, range, category]
+create or replace function public.search_index_fittings() returns json
+language sql stable security definer set search_path = public as $$
+  select case when is_staff() then (select json_agg(json_build_array(id, brand, code, name, mrp, thumb_path, range, category) order by id) from fittings) end
+$$;
+revoke execute on function public.search_index_version() from anon, public;
+revoke execute on function public.search_index_tiles() from anon, public;
+revoke execute on function public.search_index_fittings() from anon, public;
+grant execute on function public.search_index_version() to authenticated;
+grant execute on function public.search_index_tiles() to authenticated;
+grant execute on function public.search_index_fittings() to authenticated;

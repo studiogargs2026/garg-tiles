@@ -1,13 +1,14 @@
 // Keeps the app shell on the phone so it opens instantly; tile data always comes fresh.
-const CACHE = 'garg-tiles-v39';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'selection.js', 'photo.js', 'stock.js', 'vendor/jspdf.umd.min.js', 'icons/gs-logo.jpg', 'icons/kp-logo.jpg', 'icons/gsn-logo.jpg', 'icons/kp-logo-light.jpg', 'icons/brand-strip.jpg', 'vendor/fonts/Poppins-400.ttf', 'vendor/fonts/Poppins-600.ttf', 'vendor/fonts/Playfair-700.ttf', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon-192.png'];
+// Only old copies of the app itself are removed; the search lists and photo model have their own.
+const CACHE = 'garg-tiles-v40';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'search.js', 'selection.js', 'photo.js', 'stock.js', 'vendor/jspdf.umd.min.js', 'icons/gs-logo.jpg', 'icons/kp-logo.jpg', 'icons/gsn-logo.jpg', 'icons/kp-logo-light.jpg', 'icons/brand-strip.jpg', 'vendor/fonts/Poppins-400.ttf', 'vendor/fonts/Poppins-600.ttf', 'vendor/fonts/Playfair-700.ttf', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();         // a new version takes over at once instead of waiting for every tab to close
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
 });
 self.addEventListener('activate', (e) => e.waitUntil(
-  caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+  caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('garg-tiles-') && k !== CACHE).map((k) => caches.delete(k))))
     .then(() => self.clients.claim())
 ));
 self.addEventListener('fetch', (e) => {
