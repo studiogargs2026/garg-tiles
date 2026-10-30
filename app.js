@@ -134,6 +134,7 @@ async function enterApp() {
   current = null;
   show('search-view');      // never wait on the network before showing the app
   loadFilters();
+  loadQuick();              // the phone's copy of all product names, for instant suggestions
   window.resumeDraft?.();   // an unfinished client selection opens again
   const { data } = await db.rpc('is_admin');
   isAdmin = data === true;
@@ -347,32 +348,45 @@ $('more').addEventListener('click', () => runSearch(true));
   runSearch();
 }));
 
-// Suggestions while typing; only the newest answer is shown when typing fast.
+// Suggestions while typing, from the phone's own copy of the lists (search.js), so they show at
+// each letter. The server answers only before that copy is ready, with a size filter, or to find
+// a tile name typed with a spelling mistake. Only the newest answer is shown when typing fast.
 let suggestTimer = null;
 let suggestTurn = 0;
 function hideSuggest() { $('suggest').hidden = true; suggestTurn++; }
+
+function showSuggest(data, turn) {
+  if (!data.length) return ($('suggest').hidden = true);
+  $('suggest').innerHTML = data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
+    ${thumbSpot(t.thumb_path)}
+    <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ' · ' + esc(t.code) : ''}</span></span></button></li>`).join('');
+  $('suggest').hidden = false;
+  fillThumbs($('suggest'), () => turn === suggestTurn);
+}
+
+async function serverSuggest(q, turn) {
+  const f = filters(), fb = fitBrand();
+  const [{ data: tiles }, { data: fits }] = await Promise.all([
+    fb ? { data: [] } : db.rpc('suggest_tiles', { q, ...f }),
+    f.p_brand || f.p_size ? { data: [] } : db.rpc('suggest_fittings', { q }),
+  ]);
+  if (turn !== suggestTurn) return;
+  showSuggest([...(tiles || []), ...(fits || []).filter((t) => !fb || t.brand === fb).map((t) => ({ ...t, fit: true }))], turn);
+}
 
 $('q').addEventListener('input', () => {
   clearTimeout(suggestTimer);
   const q = $('q').value.trim();
   if (!q) { hideSuggest(); if (!filters().p_brand && !filters().p_size) runSearch(); return; }
-  suggestTimer = setTimeout(async () => {
-    const turn = ++suggestTurn;
-    const f = filters(), fb = fitBrand();
-    const [{ data: tiles }, { data: fits }] = await Promise.all([
-      fb ? { data: [] } : db.rpc('suggest_tiles', { q, ...f }),
-      f.p_brand || f.p_size ? { data: [] } : db.rpc('suggest_fittings', { q }),
-    ]);
-    if (turn !== suggestTurn) return;
-    const data = [...(tiles || []), ...(fits || []).filter((t) => !fb || t.brand === fb).map((t) => ({ ...t, fit: true }))];
-    if (!data?.length) return ($('suggest').hidden = true);
-    const urls = await signedUrls(data.map((t) => t.thumb_path));
-    if (turn !== suggestTurn) return;
-    $('suggest').innerHTML = data.map((t) => `<li><button type="button" data-${t.fit ? 'fit' : 'id'}="${t.id}">
-      ${urls[t.thumb_path] ? `<img src="${urls[t.thumb_path]}" alt="">` : '<span class="dot"></span>'}
-      <span><b>${esc(t.name)}</b> <span class="muted">${esc(t.brand)}${t.fit ? ' · ' + esc(t.code) : ''}</span></span></button></li>`).join('');
-    $('suggest').hidden = false;
-  }, 200);
+  const turn = ++suggestTurn;
+  const f = filters(), fb = fitBrand();
+  const found = f.p_size ? null : findQuick(q, { tiles: !fb, fits: !f.p_brand, brand: f.p_brand, fitBrand: fb });
+  if (found) {
+    showSuggest([...found.tiles, ...found.fits.map((t) => ({ ...t, fit: true }))], turn);
+    // a spelling mistake: the server finds names that are close
+    if (found.tiles.length || found.fits.length || fb || !q.split(/\s+/).some((w) => w.length >= 4)) return;
+  }
+  suggestTimer = setTimeout(() => serverSuggest(q, turn), found ? 300 : 150);
 });
 
 $('suggest').addEventListener('click', (e) => {
