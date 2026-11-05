@@ -140,6 +140,7 @@ main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
 .suggest .fit-code { font-size: .8rem; }
 .qty-row > span { flex: 2; }
 .qty-row > .pcs-note { align-self: center; font-size: 13px; }
+.box-hint { font-size: 13px; margin: -2px 0 8px; }
 .sel-search { margin: 12px 0 0; }
 .add-here { margin: 8px 0 2px; font-weight: 600; }
 .own-photo { display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 0; cursor: pointer;

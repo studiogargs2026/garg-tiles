@@ -113,6 +113,55 @@ function setBoxes(it, boxes) {
   if (box && boxes > 0) it.sqft = Math.round(boxes * box * 100) / 100;
 }
 
+// ---------- box packing for products not in the app ----------
+
+// The size typed by hand turned into cm ("600x600 mm", "60x60", "2x4 ft", "24x48 inch"), or null.
+function handSizeCm(text) {
+  const t = (text || '').toLowerCase();
+  const m = /([\d.]+)\s*[x*×]\s*([\d.]+)/.exec(t);
+  if (!m) return null;
+  let a = Number(m[1]), b = Number(m[2]);
+  if (!a || !b) return null;
+  if (/mm/.test(t)) { a /= 10; b /= 10; }
+  else if (/cm/.test(t)) { /* already cm */ }
+  else if (/ft|feet|'/.test(t)) { a *= 30; b *= 30; }        // 1 ft is charged as 12 inch = 30 cm
+  else if (/in|"/.test(t)) { a *= 2.5; b *= 2.5; }
+  else if (Math.min(a, b) > 160 || Math.max(a, b) > 330) { a /= 10; b /= 10; }   // no unit: big numbers are mm
+  return `${a}x${b}`;
+}
+
+// charged sq ft in one box: typed on the product, else worked out from its size and pieces
+function otherBoxSqft(it) {
+  if (Number(it.boxSqft) > 0) return Number(it.boxSqft);
+  const size = handSizeCm(it.size);
+  return size && Number(it.pcs) > 0 ? chargedBoxSqft({ size, packing: `${Number(it.pcs)} pcs` }) : null;
+}
+
+// how much of the unit one box holds: sq ft for Sqft, pieces for Pcs
+function otherPerBox(it) {
+  if (it.unit === 'Sqft') return otherBoxSqft(it) || 0;
+  if (it.unit === 'Pcs') return Number(it.pcs) || 0;
+  return 0;
+}
+
+// boxes worked out from the quantity (rounded up to full boxes, like tiles), or the other way round
+function syncOtherBoxes(it, from) {
+  const per = otherPerBox(it);
+  if (!per) return;
+  if (from === 'boxes' || (from !== 'qty' && Number(it.boxes) > 0)) {
+    if (Number(it.boxes) > 0) it.qty = Math.round(Number(it.boxes) * per * 100) / 100;
+  } else if (Number(it.qty) > 0) {
+    it.boxes = Math.ceil(Number(it.qty) / per - 1e-9);
+    it.qty = Math.round(it.boxes * per * 100) / 100;
+  } else it.boxes = '';
+}
+
+// boxes printed for a product: tiles always, products not in the app when their box is known
+function shownBoxes(it) {
+  if (it.kind === 'tile') return it.boxes;
+  return it.kind === 'other' && otherPerBox(it) ? it.boxes : '';
+}
+
 // discount in %, 0 to 100
 function discOf(it) {
   return Math.min(100, Math.max(0, Number(it.disc) || 0));
@@ -359,6 +408,7 @@ function itemHtml(it, ii) {
         <label>Unit<select data-f="unit">${UNITS.map((u) => `<option${u === it.unit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
         <label class="q-only">Rate ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
       </div>
+      ${otherBoxHtml(it)}
       <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
       <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
       <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
@@ -385,6 +435,21 @@ function itemHtml(it, ii) {
     <div class="muted amount">${boxSqftOf(it) ? `${boxSqftOf(it)} sq ft per box (charged)` : ''}<span class="q-only">${boxSqftOf(it) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
     <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
   </div>`;
+}
+
+// the box fields of a product not in the app: shown when it is sold by Sqft or Pcs
+function otherBoxHtml(it) {
+  if (it.unit !== 'Sqft' && it.unit !== 'Pcs') return '';
+  const sqft = it.unit === 'Sqft';
+  const auto = otherBoxSqft(it);
+  const per = otherPerBox(it);
+  return `<div class="qty-row">
+      <label>Pieces in 1 box<input data-f="pcs" type="number" inputmode="numeric" value="${esc(it.pcs ?? '')}" placeholder="e.g. 4"></label>
+      ${sqft ? `<label>Sq ft in 1 box<input data-f="boxSqft" type="number" inputmode="decimal" value="${esc(it.boxSqft || auto || '')}" placeholder="e.g. 16"></label>` : ''}
+      <label>Boxes<input data-f="boxes" type="number" inputmode="numeric" value="${esc(it.boxes ?? '')}"${per ? '' : ' disabled'}></label>
+    </div>
+    <p class="muted box-hint">${per ? `1 box = ${money(per)} ${sqft ? 'sq ft' : 'pieces'}. Type the boxes or the quantity, the other fills in.`
+      : sqft ? 'Type the pieces in 1 box (with the size) or the sq ft in 1 box' : 'Type the pieces in 1 box'}</p>`;
 }
 
 async function refreshThumbs() {
@@ -435,6 +500,17 @@ $('sel-areas').addEventListener('change', (e) => {
   if (!it || !f) return;
   const v = e.target.value;
   if (f === 'photo') return addPhoto(it, e.target.files[0]);
+  if (it.kind === 'other') {
+    if (f === 'role') { it.role = v; return; }
+    if (f === 'unit' || f === 'pcs' || f === 'boxes' || f === 'boxSqft') it[f] = v;
+    else if (f !== 'qty' && f !== 'size') return;
+    // the sq ft in 1 box goes back to being worked out when the pieces or size change
+    if (f === 'pcs' || f === 'size') delete it.boxSqft;
+    syncOtherBoxes(it, f);
+    renderSelection();
+    changed(true);
+    return;
+  }
   if (f === 'role' || f === 'unit') it[f] = v;
   else if (f === 'base') {
     const typed = it.base === 'nrp' ? it.nrpDisc : it.disc;     // the number typed carries over
@@ -713,7 +789,8 @@ $('qa-list').addEventListener('click', async (e) => {
   if (btn.dataset.saved) {
     const p = qaSaved[Number(btn.dataset.saved)];
     const photo = await savedPhoto(p.id);
-    area.items.push({ kind: 'other', desc: p.name, role: p.role || 'Other', size: p.size || '', qty: '', unit: p.unit || 'Pcs', rate: p.rate ?? '', photo: photo || null, disc: sel.data.discAll || '' });
+    area.items.push({ kind: 'other', desc: p.name, role: p.role || 'Other', size: p.size || '', qty: '', unit: p.unit || 'Pcs', rate: p.rate ?? '', photo: photo || null, disc: sel.data.discAll || '',
+      pcs: p.pcs ?? '', boxSqft: p.box_sqft ?? '', boxes: '' });
     renderSelection();
     changed(true);
     $('qa-msg').textContent = `Added ${p.name} to ${area.name || `Area ${target + 1}`}`;
@@ -757,8 +834,15 @@ function productKey(name, size) {
 // pictures come for the few shown.
 let savedList = [];
 const savedPhotos = new Map();        // id -> picture
+// the box packing columns (pcs, box_sqft) are used once the database has them
+let savedBoxCols = true;
 async function loadSaved() {
-  const { data } = await db.from('saved_products').select('id, name, size, role, unit, rate').order('updated_at', { ascending: false });
+  const cols = 'id, name, size, role, unit, rate';
+  let { data, error } = await db.from('saved_products').select(savedBoxCols ? `${cols}, pcs, box_sqft` : cols).order('updated_at', { ascending: false });
+  if (error && savedBoxCols) {
+    savedBoxCols = false;
+    ({ data } = await db.from('saved_products').select(cols).order('updated_at', { ascending: false }));
+  }
   if (data) savedList = data;
 }
 
@@ -798,13 +882,15 @@ async function keepProducts() {
   for (const a of sel.data.areas) for (const it of a.items) {
     if (it.kind !== 'other' || !(it.desc || '').trim()) continue;
     const row = { name: it.desc.trim(), size: (it.size || '').trim(), role: it.role || null, unit: it.unit || null,
-      rate: it.rate === '' || it.rate == null ? null : Number(it.rate), photo: it.photo || null };
+      rate: it.rate === '' || it.rate == null ? null : Number(it.rate), photo: it.photo || null,
+      pcs: Number(it.pcs) > 0 ? Number(it.pcs) : null, box_sqft: Number(it.boxSqft) > 0 ? Number(it.boxSqft) : null };
     rows.set(productKey(row.name, row.size), row);
   }
   const fresh = [...rows].filter(([k, r]) => keptProducts.get(k) !== JSON.stringify(r));
   if (!fresh.length) return;
   const at = new Date().toISOString();
-  const { error } = await db.from('saved_products').upsert(fresh.map(([, r]) => ({ ...r, updated_at: at })), { onConflict: 'key' });
+  const { error } = await db.from('saved_products').upsert(fresh.map(([, { pcs, box_sqft, ...r }]) =>
+    ({ ...r, ...(savedBoxCols ? { pcs, box_sqft } : {}), updated_at: at })), { onConflict: 'key' });
   if (error) return;
   for (const [k, r] of fresh) keptProducts.set(k, JSON.stringify(r));
   savedPhotos.clear();
@@ -1556,7 +1642,7 @@ async function quotationPdf() {
           if (det.length) doc.text(det, col.desc.x + 6, ty - 1);
           if (size.length) { pen(doc, 'Poppins', 'normal', 7.8, C.ink); doc.text(size, col.size.x + 6, mid - (size.length * 9.5) / 2 + 7); }
           pen(doc, 'Poppins', 'normal', 8.8, C.ink);
-          if (col.boxes && tile && it.boxes) doc.text(String(it.boxes), col.boxes.right - 6, mid + 3, { align: 'right' });
+          if (col.boxes && shownBoxes(it)) doc.text(String(shownBoxes(it)), col.boxes.right - 6, mid + 3, { align: 'right' });
           if (col.qty && qty) doc.text(tile ? `${money(qty)} sq ft` : `${qty} ${it.unit || ''}`.trim(), col.qty.right - 6, mid + 3, { align: 'right' });
           // a fitting always shows its MRP; with the NRP column its discount is the one given on NRP
           if (col.mrp && rate) doc.text(rs(shownRate(rate), 0), col.mrp.right - 6, mid + 3, { align: 'right' });
