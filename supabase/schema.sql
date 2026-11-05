@@ -370,6 +370,11 @@ create policy "admins remove saved products" on public.saved_products for delete
 grant select, insert, delete on public.saved_products to authenticated;
 grant update (name, size, role, unit, rate, photo, updated_at) on public.saved_products to authenticated;
 
+-- box packing of a product added by hand (Kirti 2026-11-05): pieces and charged sq ft in 1 box
+alter table public.saved_products add column if not exists pcs numeric;
+alter table public.saved_products add column if not exists box_sqft numeric;
+grant update (pcs, box_sqft) on public.saved_products to authenticated;
+
 -- Instant suggestions (2026-10-30): each phone keeps one copy of every tile and fitting name, so the
 -- search boxes suggest products while typing without asking the server each time. The phone asks
 -- search_index_version() when the app opens and downloads the lists again only when it changed.
