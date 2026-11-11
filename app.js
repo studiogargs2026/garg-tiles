@@ -61,11 +61,15 @@ function rupees(n, decimals = 2) {
 }
 
 // Pictures are in a private bucket, so each needs a short-lived signed link.
+// Pictures under "pics/" (public catalog pictures, e.g. Astral pipes) live with the app itself;
+// all others are in the private "tiles" bucket and need a signed link.
 async function signedUrls(paths) {
   const wanted = paths.filter(Boolean);
-  if (!wanted.length) return {};
-  const { data } = await db.storage.from('tiles').createSignedUrls(wanted, 3600);
-  return Object.fromEntries((data || []).filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
+  const own = Object.fromEntries(wanted.filter((p) => p.startsWith('pics/')).map((p) => [p, new URL(p, location.href).href]));
+  const rest = wanted.filter((p) => !p.startsWith('pics/'));
+  if (!rest.length) return own;
+  const { data } = await db.storage.from('tiles').createSignedUrls(rest, 3600);
+  return { ...own, ...Object.fromEntries((data || []).filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl])) };
 }
 
 // Two showrooms, each with its own logo, colours, letterhead and quote numbers. Everyone picks
@@ -324,7 +328,7 @@ async function runSearch(more = false) {
   lastResults = lastResults.concat(fresh);
   const n = lastResults.length;
   const nf = fits?.length || 0;
-  $('status').textContent = n || nf ? [n && `${n}${data.length === PAGE ? '+' : ''} tile${n > 1 ? 's' : ''}`, nf && `${nf}${nf === PAGE ? '+' : ''} bathroom fitting${nf > 1 ? 's' : ''}`].filter(Boolean).join(' · ')
+  $('status').textContent = n || nf ? [n && `${n}${data.length === PAGE ? '+' : ''} tile${n > 1 ? 's' : ''}`, nf && `${nf}${nf === PAGE ? '+' : ''} fitting${nf > 1 ? 's' : ''}`].filter(Boolean).join(' · ')
     : 'No tiles found. Try fewer words or change the filters.';
   $('more').hidden = data.length < PAGE;
   const urls = await signedUrls([...fresh, ...(fits || [])].map((t) => t.thumb_path));
