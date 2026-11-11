@@ -1318,9 +1318,13 @@ async function selectionPdf() {
         for (const [k, it] of group.entries()) {
           const x = x0 + k * (cardW + gap);
           busy(true, `Making the PDF… picture ${++done} of ${total}`);
-          const pic = await pictureData(itemPicture(it), { portrait: it.kind === 'tile', aspect: cardW / picH });
+          // the whole picture, never cut: fitted inside the box and centred on white
+          const pic = await pictureData(itemPicture(it), { portrait: it.kind === 'tile' });
           doc.setFillColor(...C.white); doc.rect(x - 6, picTop - 6, cardW + 12, picH + 12, 'F');
-          if (pic) doc.addImage(pic.src, 'JPEG', x, picTop, cardW, picH);
+          if (pic) {
+            const k = Math.min(cardW / pic.w, picH / pic.h), pw = pic.w * k, ph = pic.h * k;
+            doc.addImage(pic.src, 'JPEG', x + (cardW - pw) / 2, picTop + (picH - ph) / 2, pw, ph);
+          }
           else {
             doc.setFillColor(...C.sand); doc.rect(x, picTop, cardW, picH, 'F');
             pen(doc, 'Poppins', 'normal', 9, C.grey); doc.text('Picture not available', x + cardW / 2, picTop + picH / 2, { align: 'center' });
@@ -1541,8 +1545,8 @@ async function quotationPdf() {
           const mid = y + h / 2;
           if (col.serial) { pen(doc, 'Poppins', 'normal', 8.5, C.grey); doc.text(String(++serial), col.serial.x + 6, mid + 3); }
           if (pics && picPath) {
-            // tiles are cut square; a fitting is shown whole, fitted into the square
-            const pic = await pictureData(picPath, { maxSide: 240, aspect: fit ? null : 1 });
+            // every picture is shown whole, fitted into the square
+            const pic = await pictureData(picPath, { maxSide: 240 });
             if (pic) {
               const k = 42 / Math.max(pic.w, pic.h), pw = pic.w * k, ph = pic.h * k;
               doc.addImage(pic.src, 'JPEG', col.pic.x + 4 + (42 - pw) / 2, y + (h - ph) / 2, pw, ph);
