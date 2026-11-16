@@ -167,6 +167,28 @@ function discOf(it) {
   return Math.min(100, Math.max(0, Number(it.disc) || 0));
 }
 
+// the net rate after discount (per sq ft for tiles, per piece or unit for the rest), as shown in the box
+function netShown(it) {
+  const rate = Number(it.rate) || 0;
+  return rate ? Math.round(rate * (1 - discOf(it) / 100) * 100) / 100 : '';
+}
+
+// a net rate typed by hand: the discount is worked out from it (on NRP for a Jaquar fitting priced on NRP)
+function setNet(it, v) {
+  const rate = Number(it.rate) || 0, n = Number(v);
+  if (!rate || v === '' || !(n >= 0)) return setDisc(it, '');
+  const on = it.kind === 'fit' && it.base === 'nrp' ? (Number(it.nrp) || rate) : rate;
+  const d = Math.min(100, Math.max(0, (1 - n / on) * 100));
+  setDisc(it, d > 0.000001 ? d : '');
+}
+
+// a discount for its box: 12.7000001 -> 12.7
+const discField = (v) => (v === '' || v == null ? '' : Math.round(Number(v) * 100) / 100);
+
+function netHtml(it, label) {
+  return `<label class="net">${label}<input data-f="net" type="number" inputmode="decimal" value="${esc(netShown(it))}" placeholder="—"></label>`;
+}
+
 function amountOf(it) {
   const qty = it.kind === 'tile' ? Number(it.sqft) : Number(it.qty);
   return Math.round((qty || 0) * (Number(it.rate) || 0) * (1 - discOf(it) / 100));
@@ -383,7 +405,8 @@ function itemHtml(it, ii) {
       </div>
       <div class="qty-row q-only">
         ${it.nrp ? `<label>Discount on<select data-f="base"><option value="mrp"${onNrp ? '' : ' selected'}>MRP</option><option value="nrp"${onNrp ? ' selected' : ''}>NRP ₹${money(it.nrp)}</option></select></label>` : ''}
-        <label class="disc">Discount %<input data-f="${onNrp ? 'nrpDisc' : 'disc'}" type="number" inputmode="decimal" value="${esc(onNrp ? it.nrpDisc ?? '' : it.disc ?? '')}" placeholder="0"></label>
+        <label class="disc">Discount %<input data-f="${onNrp ? 'nrpDisc' : 'disc'}" type="number" inputmode="decimal" value="${esc(discField(onNrp ? it.nrpDisc : it.disc))}" placeholder="0"></label>
+        ${netHtml(it, 'Net ₹ each')}
       </div>
       ${it.clp != null || it.hvr != null ? `<div class="fit-btns q-only">${it.clp != null ? `<button type="button" class="ghost small" data-act="fit-clp">CLP ${pct(it.clp)}</button>` : ''}${it.hvr != null ? `<button type="button" class="ghost small" data-act="fit-hvr">HVR ${pct(it.hvr)}</button>` : ''}</div>` : ''}
       <p class="muted fit-note q-only">${fitNote(it)}</p>
@@ -409,7 +432,7 @@ function itemHtml(it, ii) {
         <label class="q-only">Rate ₹<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
       </div>
       ${otherBoxHtml(it)}
-      <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
+      <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(discField(it.disc))}" placeholder="0"></label>${netHtml(it, 'Net rate ₹')}</div>
       <div class="muted amount"><span class="q-only">Amount: ₹${money(amountOf(it))}</span></div>
       <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
     </div>`;
@@ -430,7 +453,7 @@ function itemHtml(it, ii) {
       <label>Boxes<input data-f="boxes" type="number" inputmode="numeric" value="${esc(it.boxes)}"></label>
       <label class="q-only">Rate ₹/sq ft<input data-f="rate" type="number" inputmode="decimal" value="${esc(it.rate)}"></label>
     </div>
-    <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(it.disc ?? '')}" placeholder="0"></label><span></span></div>
+    <div class="qty-row q-only"><label class="disc">Discount %<input data-f="disc" type="number" inputmode="decimal" value="${esc(discField(it.disc))}" placeholder="0"></label>${netHtml(it, 'Net ₹/sq ft')}</div>
     ${packingKnown(it) ? '' : `<div class="qty-row"><label>Pieces in 1 box<input data-f="pcs" type="number" inputmode="numeric" value="${esc(pcsOf(it) || '')}"></label><span class="muted pcs-note">Not in the price list, please check with the box</span></div>`}
     <div class="muted amount">${boxSqftOf(it) ? `${boxSqftOf(it)} sq ft per box (charged)` : ''}<span class="q-only">${boxSqftOf(it) ? ' · ' : ''}Amount: ₹${money(amountOf(it))}</span></div>
     <button type="button" class="ghost small del-end" data-act="del-item">Delete this product</button>
@@ -488,7 +511,14 @@ $('sel-areas').addEventListener('input', (e) => {
   else if (it && (f === 'desc' || f === 'size')) it[f] = v;
   else if (it && (f === 'rate' || f === 'qty' || f === 'disc')) { it[f] = v; if (f === 'rate' && it.base === 'nrp') it.disc = nrpDisc(it); }
   else if (it && f === 'nrpDisc') setDisc(it, v);
+  else if (it && f === 'net') setNet(it, v);
   else return;
+  if (it && itemEl) {
+    // keep the discount and net boxes showing the same price
+    const net = itemEl.querySelector('[data-f="net"]'), disc = itemEl.querySelector('[data-f="disc"], [data-f="nrpDisc"]');
+    if (f === 'net' && disc) disc.value = discField(disc.dataset.f === 'nrpDisc' ? it.nrpDisc : it.disc);
+    else if (f !== 'net' && net) net.value = netShown(it);
+  }
   if (it && isFit(it)) itemEl.querySelector('.fit-note').textContent = fitNote(it);
   if (itemEl) itemEl.querySelector('.amount').innerHTML = itemEl.querySelector('.amount').innerHTML.replace(/Amount: ₹[\d,]*/, `Amount: ₹${money(amountOf(it))}`);
   updateTotal();
@@ -500,6 +530,7 @@ $('sel-areas').addEventListener('change', (e) => {
   if (!it || !f) return;
   const v = e.target.value;
   if (f === 'photo') return addPhoto(it, e.target.files[0]);
+  if (f === 'net') { e.target.value = netShown(it); changed(true); return; }
   if (it.kind === 'other') {
     if (f === 'role') { it.role = v; return; }
     if (f === 'unit' || f === 'pcs' || f === 'boxes' || f === 'boxSqft') it[f] = v;
