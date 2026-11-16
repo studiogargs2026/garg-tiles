@@ -616,8 +616,16 @@ $('pin-form').addEventListener('submit', async (e) => {
 $('admin-back').addEventListener('click', goBack);
 
 // Calling Supabase inside this callback can hang the login on some phones, so run it just after.
+// The login library also says "signed in" each time the person comes back to the app from another
+// app or tab. If the same person is already inside, leave the screen exactly as it is: starting
+// again sent them to the search screen and then re-opened their quotation, which took a second or two.
+let sessionUser;
 db.auth.onAuthStateChange((event, session) => {
-  if (['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT'].includes(event)) setTimeout(() => startSession(session), 0);
+  if (!['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT'].includes(event)) return;
+  const who = session?.user?.id || null;
+  if (event === 'SIGNED_IN' && who && who === sessionUser) return;
+  sessionUser = who;
+  setTimeout(() => startSession(session), 0);
 });
 
 if ('serviceWorker' in navigator) {
