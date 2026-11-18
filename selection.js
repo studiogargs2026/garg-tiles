@@ -8,6 +8,11 @@ const ROLES = ['Wall', 'Floor', 'Highlighter', 'Slab', 'Other'];
 const ROLE_TAG = { Wall: 'WALL', Floor: 'FLOOR', Highlighter: 'HL', Slab: 'SLAB', Other: '' };
 const AREA_NAMES = ['Master Washroom', 'Powder Washroom', 'Common Washroom', 'Other Washroom', 'Kitchen Wall & Slab',
   'Living Room', 'Bedroom', 'Guest Room', 'Balcony', 'Staircase', 'All Floor'];
+// a product not in the app can also be a bathroom fitting; it then goes with the other fittings
+const OTHER_ROLES = [...ROLES, 'Fitting'];
+const ROLE_LABEL = { Fitting: 'Bathroom fitting' };
+// names that mean a bathroom fitting, so a hand-typed shower joins the Kohler/Jaquar items
+const FIT_WORDS = /shower|faucet|\btap\b|mixer|basin|\bwc\b|closet|commode|spout|diverter|valve|cistern|flush|urinal|\bsink\b|bath ?tub|geyser|water heater|towel|soap|bidet|\bjet\b|drain|bottle trap|angle cock|pillar cock|sink cock|bib cock|concealed|in.?wall tank|seat cover|hand ?shower|rain ?shower|overhead/i;
 const UNITS = ['Bag', 'Pcs', 'Box', 'Sqft', 'Set', 'Rft'];
 
 let sel = null;              // the selection or quotation being edited
@@ -233,6 +238,26 @@ function fitNote(it) {
 }
 
 const isFit = (it) => it.kind === 'fit';
+// goes in the quotation's Bathroom fittings table: fittings from the app, and products typed in as one
+const inFitTable = (it) => isFit(it) || (it.kind === 'other' && it.role === 'Fitting');
+
+// a product typed in by hand whose name says it is a fitting (shower, mixer, WC...) becomes one,
+// once; after that "Used as" is the person's own choice
+function guessFitting(it) {
+  if (it.kind !== 'other' || it.roleSet || (it.role && it.role !== 'Other')) return false;
+  if (!FIT_WORDS.test(it.desc || '')) return false;
+  it.role = 'Fitting';
+  return true;
+}
+
+// the serial number each product gets in the quotation PDF: tiles first, then fittings, area by area
+function serialNumbers() {
+  const no = new Map();
+  let n = 0;
+  for (const pick of [(it) => !inFitTable(it), inFitTable])
+    for (const a of sel.data.areas) for (const it of a.items) if (pick(it)) no.set(it, ++n);
+  return no;
+}
 
 function money(n) {
   return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
@@ -366,6 +391,10 @@ function renderSelection() {
   readyQuote().then(renderQuoteSettings).catch(() => {});
   document.querySelectorAll('[name=sel-names]').forEach((r) => (r.checked = r.value === (d.nameStyle || 'real')));
   showTarget();
+  d.areas.forEach((a) => a.items.forEach(guessFitting));
+  const nos = quote ? serialNumbers() : new Map();
+  const count = d.areas.reduce((sum, a) => sum + a.items.length, 0);
+  $('sel-order').hidden = count < 2;
   $('sel-areas').innerHTML = d.areas.map((a, ai) => `
     <div class="area card${ai === target ? ' target' : ''}" data-area="${ai}">
       <div class="area-head">
@@ -373,7 +402,7 @@ function renderSelection() {
         <button type="button" class="link danger" data-act="del-area">Remove</button>
       </div>
       <label class="choice add-here"><input type="radio" name="add-here" data-act="target"${ai === target ? ' checked' : ''}> Add products here</label>
-      ${a.items.map((it, ii) => itemHtml(it, ii)).join('') || '<p class="muted">No products yet.</p>'}
+      ${a.items.map((it, ii) => itemHtml(it, ii, nos.get(it))).join('') || '<p class="muted">No products yet.</p>'}
       <div class="area-actions">
         <button type="button" class="primary small" data-act="add-tile">+ Add product</button>
         <button type="button" class="ghost small" data-act="add-other">+ Product not in the app</button>
@@ -388,7 +417,12 @@ function renderSelection() {
   keepLocal(true);
 }
 
-function itemHtml(it, ii) {
+function itemHtml(it, ii, no) {
+  const html = itemCard(it, ii);
+  return no ? html.replace('<div class="item-top">', `<div class="item-top"><span class="sr-no" title="Number in the quotation">${no}</span>`) : html;
+}
+
+function itemCard(it, ii) {
   if (isFit(it)) {
     const onNrp = it.base === 'nrp';
     return `<div class="item fit" data-item="${ii}">
@@ -423,7 +457,7 @@ function itemHtml(it, ii) {
       </div>
       <label>Name<input data-f="desc" value="${esc(it.desc)}" placeholder="e.g. Dimond Star (50kg) or Wash basin"></label>
       <div class="qty-row">
-        <label>Used as<select data-f="role">${ROLES.map((r) => `<option${r === (it.role || 'Other') ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
+        <label>Used as<select data-f="role">${OTHER_ROLES.map((r) => `<option value="${r}"${r === (it.role || 'Other') ? ' selected' : ''}>${ROLE_LABEL[r] || r}</option>`).join('')}</select></label>
         <label class="wide">Size (optional)<input data-f="size" value="${esc(it.size || '')}" placeholder="e.g. 600x600 mm"></label>
       </div>
       <div class="qty-row">
@@ -532,7 +566,8 @@ $('sel-areas').addEventListener('change', (e) => {
   if (f === 'photo') return addPhoto(it, e.target.files[0]);
   if (f === 'net') { e.target.value = netShown(it); changed(true); return; }
   if (it.kind === 'other') {
-    if (f === 'role') { it.role = v; return; }
+    if (f === 'role') { it.role = v; it.roleSet = true; renderSelection(); return; }
+    if (f === 'desc') { if (guessFitting(it)) renderSelection(); return; }
     if (f === 'unit' || f === 'pcs' || f === 'boxes' || f === 'boxSqft') it[f] = v;
     else if (f !== 'qty' && f !== 'size') return;
     // the sq ft in 1 box goes back to being worked out when the pieces or size change
@@ -581,6 +616,135 @@ $('sel-areas').addEventListener('click', (e) => {
   else return;
   renderSelection();
 });
+
+// ---------- changing the order (the serial numbers) ----------
+// One row per product, laid out the way the quotation PDF prints them: tiles first, then bathroom
+// fittings, area by area. Dragging the handle (finger or mouse) moves a product, also into another area
+// of the same table; the arrows move it one place. Every move is saved straight away.
+function orderGroups() {
+  const quote = kindOf(sel) === 'quotation';
+  const secs = quote ? [['TILES', (it) => !inFitTable(it)], ['BATHROOM FITTINGS', inFitTable]] : [['', () => true]];
+  return secs.map(([title, pick]) => ({ title, pick, areas: sel.data.areas.map((a, ai) => ({ ai, items: a.items.filter(pick) })).filter((g) => g.items.length) }))
+    .filter((sec) => sec.areas.length);
+}
+
+let orderItems = [];
+function renderOrder() {
+  const groups = orderGroups();
+  orderItems = [];
+  let n = 0;
+  const label = (it) => (it.kind === 'other' ? it.desc || 'Product not in the app' : it.pdfName || it.name || '');
+  const sub = (it) => (it.kind === 'other' ? it.size || '' : [it.brand, isFit(it) && it.code].filter(Boolean).join(' · '));
+  $('order-list').innerHTML = groups.map((sec, si) => `<div class="order-group" data-sec="${si}">
+      ${groups.length > 1 || sec.title === 'BATHROOM FITTINGS' ? `<div class="order-sec">${sec.title}</div>` : ''}
+      ${sec.areas.map((g) => `<div class="order-area" data-ai="${g.ai}">${esc(sel.data.areas[g.ai].name || `Area ${g.ai + 1}`)}</div>
+        ${g.items.map((it) => {
+          const k = orderItems.push(it) - 1;
+          return `<div class="order-row" data-k="${k}"><span class="order-grip" aria-label="Drag">&#9776;</span><span class="sr-no">${++n}</span>
+            <span class="grow">${esc(label(it))}${sub(it) ? `<small>${esc(sub(it))}</small>` : ''}</span>
+            <button type="button" class="mv" data-mv="-1" aria-label="Move up">&#9650;</button><button type="button" class="mv" data-mv="1" aria-label="Move down">&#9660;</button></div>`;
+        }).join('')}`).join('')}
+    </div>`).join('');
+}
+
+// read the new order off the screen and put it into the areas: each area keeps its tiles, then its fittings
+function applyOrder() {
+  const groups = orderGroups();
+  const placed = new Map(sel.data.areas.map((a, ai) => [ai, groups.map(() => [])]));
+  document.querySelectorAll('#order-list .order-group').forEach((gEl) => {
+    const si = Number(gEl.dataset.sec);
+    let ai = null;
+    for (const el of gEl.children) {
+      if (el.classList.contains('order-area')) ai = Number(el.dataset.ai);
+      else if (el.classList.contains('order-row') && ai != null) placed.get(ai)[si].push(orderItems[Number(el.dataset.k)]);
+    }
+  });
+  sel.data.areas.forEach((a, ai) => {
+    const shown = new Set(orderItems);
+    a.items = [...placed.get(ai).flat(), ...a.items.filter((it) => !shown.has(it))];
+  });
+  // the numbers on the rows follow the new order
+  document.querySelectorAll('#order-list .order-row .sr-no').forEach((el, i) => (el.textContent = i + 1));
+  keepLocal(true);
+  changed(true);
+}
+
+// the rows and area headings a product can be dropped among: those of its own table
+function moveRow(row, y) {
+  const group = row.parentElement;
+  const others = [...group.children].filter((el) => el !== row && (el.classList.contains('order-row') || el.classList.contains('order-area')));
+  const before = others.find((el) => { const r = el.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  const firstArea = group.querySelector('.order-area');
+  if (before === firstArea) firstArea.after(row);
+  else if (before) before.before(row);
+  else group.append(row);
+}
+
+let drag = null;
+$('order-list').addEventListener('pointerdown', (e) => {
+  const grip = e.target.closest('.order-grip');
+  if (!grip) return;
+  e.preventDefault();
+  const row = grip.closest('.order-row');
+  grip.setPointerCapture(e.pointerId);
+  row.classList.add('dragging');
+  drag = { row, grip, id: e.pointerId, y: e.clientY, offset: e.clientY - (row.getBoundingClientRect().top + row.offsetHeight / 2) };
+  const list = $('order-list');
+  // keep scrolling while the finger is held near the top or bottom of the list
+  const tick = () => {
+    if (!drag) return;
+    const r = list.getBoundingClientRect();
+    const step = drag.y < r.top + 50 ? -10 : drag.y > r.bottom - 50 ? 10 : 0;
+    if (step) { list.scrollTop += step; follow(); }
+    drag.raf = requestAnimationFrame(tick);
+  };
+  drag.raf = requestAnimationFrame(tick);
+});
+function follow() {
+  const { row, y, offset } = drag;
+  row.style.transform = '';
+  moveRow(row, y - offset);
+  const r = row.getBoundingClientRect();
+  row.style.transform = `translateY(${y - offset - (r.top + r.height / 2)}px)`;
+}
+$('order-list').addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  e.preventDefault();
+  drag.y = e.clientY;
+  follow();
+});
+function endDrag(e) {
+  if (!drag || e.pointerId !== drag.id) return;
+  cancelAnimationFrame(drag.raf);
+  drag.row.style.transform = '';
+  drag.row.classList.remove('dragging');
+  drag = null;
+  applyOrder();
+}
+$('order-list').addEventListener('pointerup', endDrag);
+$('order-list').addEventListener('pointercancel', endDrag);
+$('order-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-mv]');
+  if (!b) return;
+  const row = b.closest('.order-row'), up = b.dataset.mv === '-1';
+  // one place up or down: just past the next row or area heading in that direction
+  let sib = up ? row.previousElementSibling : row.nextElementSibling;
+  if (!sib || sib.classList.contains('order-sec')) return;
+  if (up) { if (sib.classList.contains('order-area') && sib === row.parentElement.querySelector('.order-area')) return; sib.before(row); }
+  else sib.after(row);
+  applyOrder();
+  row.scrollIntoView({ block: 'nearest' });
+});
+$('sel-order').addEventListener('click', () => {
+  renderOrder();
+  $('order-sheet').hidden = false;
+});
+function closeOrder() {
+  $('order-sheet').hidden = true;
+  renderSelection();
+}
+$('order-done').addEventListener('click', closeOrder);
+$('order-sheet').addEventListener('click', (e) => { if (e.target === $('order-sheet')) closeOrder(); });
 
 $('sel-add-area').addEventListener('click', () => {
   sel.data.areas.push({ name: '', items: [] });
@@ -1538,11 +1702,11 @@ async function quotationPdf() {
     // Tiles (and products not in the app) come first, then bathroom fittings in their own table,
     // each with the columns ticked for this quotation; the description takes the room the others leave
     const sections = [
-      { title: 'TILES', pick: (a) => a.items.filter((it) => !isFit(it)),
+      { title: 'TILES', pick: (a) => a.items.filter((it) => !inFitTable(it)),
         list: [['serial', 22, '#'], ['pic', 50, 'TILE'], ['desc', 0, 'DESCRIPTION'], ['size', 74, 'SIZE'], ['boxes', 42, 'BOXES'],
           ['qty', 64, 'QUANTITY'], ['rate', 64, gstMode === 'split' ? 'RATE (EX. GST)' : 'RATE'], ['disc', 40, 'DISC.'], ['offer', 64, 'OFFER PRICE'],
           ['amount', 74, 'AMOUNT']] },
-      { title: 'BATHROOM FITTINGS', pick: (a) => a.items.filter(isFit),
+      { title: 'BATHROOM FITTINGS', pick: (a) => a.items.filter(inFitTable),
         list: [['serial', 22, '#'], ['pic', 50, 'PRODUCT'], ['desc', 0, 'DESCRIPTION'], ['qty', 50, 'QTY'],
           ['mrp', 62, gstMode === 'split' ? 'MRP (EX. GST)' : 'MRP'], ['nrp', 62, gstMode === 'split' ? 'NRP (EX. GST)' : 'NRP'],
           ['disc', 44, 'DISC.'], ['offer', 64, 'OFFER PRICE'], ['amount', 74, 'AMOUNT']] },
@@ -1650,7 +1814,7 @@ async function quotationPdf() {
           pen(doc, 'Poppins', 'bold', 9, C.ink);
           const name = doc.splitTextToSize(tile || fit ? it.pdfName || it.name : it.desc || '', descW).slice(0, 2);
           const detail = fit ? [it.brand, show.code !== false && it.code].filter(Boolean).join('  ·  ')
-            : [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && it.role === 'Other') && it.role].filter(Boolean).join('  ·  ');
+            : [tile && show.finish && finishTag(o.finish) && o.finish, show.role && !(it.kind === 'other' && (it.role === 'Other' || it.role === 'Fitting')) && it.role].filter(Boolean).join('  ·  ');
           pen(doc, 'Poppins', 'normal', 7.5, C.grey);
           const det = detail ? doc.splitTextToSize(detail, descW).slice(0, 2) : [];
           const sizeLine = tile ? sizeText(o) : (it.size || '').trim();

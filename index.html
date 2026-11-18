@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SalesDesk">
-  <link rel="stylesheet" href="style.css?v=46">
+  <link rel="stylesheet" href="style.css?v=47">
 </head>
 <body>
   <header class="bar">
@@ -112,6 +112,14 @@
       <datalist id="area-names"></datalist>
       <div id="sel-areas"></div>
       <button id="sel-add-area" type="button" class="ghost">+ Add area</button>
+      <button id="sel-order" type="button" class="ghost" hidden>&#8597; Change serial numbers</button>
+      <div id="order-sheet" class="order-sheet" hidden>
+        <div class="order-box">
+          <div class="order-head"><b>Change the order</b><button id="order-done" type="button" class="primary small">Done</button></div>
+          <p class="muted order-hint">Hold &#9776; and drag a product up or down, even into another area. Or tap &#9650; &#9660;. The numbers in the PDF follow this order.</p>
+          <div id="order-list"></div>
+        </div>
+      </div>
 
       <div class="card pad">
         <h3>Tile names in the PDFs</h3>
@@ -191,7 +199,7 @@
       </div>
       <p id="sel-msg" class="muted"></p>
       <button id="sel-delete" type="button" class="ghost del-whole">Delete</button>
-      <p class="muted version">SalesDesk by Garg · App version 46</p>
+      <p class="muted version">SalesDesk by Garg · App version 47</p>
     </section>
 
     <section id="photo-view" hidden>
@@ -317,12 +325,12 @@
   </nav>
 
   <script src="vendor/supabase.js"></script>
-  <script src="config.js?v=46"></script>
-  <script src="app.js?v=46"></script>
-  <script src="search.js?v=46"></script>
+  <script src="config.js?v=47"></script>
+  <script src="app.js?v=47"></script>
+  <script src="search.js?v=47"></script>
   <script src="vendor/jspdf.umd.min.js" defer></script>
-  <script src="selection.js?v=46"></script>
-  <script src="photo.js?v=46"></script>
-  <script src="stock.js?v=46"></script>
+  <script src="selection.js?v=47"></script>
+  <script src="photo.js?v=47"></script>
+  <script src="stock.js?v=47"></script>
 </body>
 </html>
