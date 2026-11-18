@@ -242,3 +242,25 @@ body[data-showroom="gsn"] {
 .nav button { padding: 6px 1px; font-size: .7rem; }
 .nav button span { font-size: 1.2rem; }
 .review .suggest img, .review .suggest .dot { width: 36px; height: 36px; aspect-ratio: auto; display: block; }
+
+/* the number a product gets in the quotation, and the screen to change the order */
+.sr-no { flex: none; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; display: grid; place-items: center;
+  background: var(--accent); color: #fff; font-size: .8rem; font-weight: 700; }
+.order-sheet { position: fixed; inset: 0; z-index: 20; background: rgba(30, 41, 59, .45); display: flex; align-items: flex-end; justify-content: center; }
+.order-box { background: var(--bg, #fffaf3); width: 100%; max-width: 640px; max-height: 92vh; display: flex; flex-direction: column;
+  border-radius: 16px 16px 0 0; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
+.order-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.order-head b { font-size: 1.1rem; }
+.order-hint { margin: 6px 0 8px; font-size: .85rem; }
+#order-list { overflow-y: auto; flex: 1; overscroll-behavior: contain; }
+.order-sec { margin: 10px 0 4px; font-size: .75rem; font-weight: 700; letter-spacing: .08em; color: var(--accent); }
+.order-area { margin: 8px 0 4px; padding: 6px 10px; border-radius: 8px; background: var(--line); font-weight: 600; }
+.order-row { display: flex; align-items: center; gap: 8px; padding: 8px 6px; margin: 4px 0; background: var(--card, #fff);
+  border: 1.5px solid var(--line); border-radius: 10px; user-select: none; -webkit-user-select: none; }
+.order-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-row .grow small { display: block; color: var(--muted, #64748b); }
+.order-row.dragging { position: relative; z-index: 2; border-color: var(--accent); box-shadow: 0 8px 22px rgba(30, 41, 59, .25); }
+.order-grip { flex: none; width: 40px; height: 40px; display: grid; place-items: center; font-size: 1.3rem; color: var(--accent);
+  touch-action: none; cursor: grab; border-radius: 8px; background: var(--line); }
+.order-row button.mv { flex: none; width: 34px; height: 34px; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: none; color: var(--accent); font-size: .9rem; box-shadow: none; }
+#sel-order { margin-top: 8px; }
