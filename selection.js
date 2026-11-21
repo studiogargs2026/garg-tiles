@@ -382,6 +382,10 @@ function renderSelection() {
   $('sel-address').value = d.address || '';
   $('sel-phone').value = d.phone || '';
   $('sel-quote-no').value = sel.quote_no || '';
+  // admins work for every showroom, so they can see and change whose letterhead this one gets
+  $('sel-room-row').hidden = !isAdmin;
+  if (isAdmin) $('sel-room').innerHTML = Object.entries(SHOWROOMS)
+    .map(([id, r]) => `<option value="${id}"${id === roomOf(sel) ? ' selected' : ''}>${esc(r.name)}</option>`).join('');
   $('sel-labour').value = d.labour || '';
   $('sel-disc-all').value = d.discAll || '';
   $('sel-notes').value = d.notes || '';
@@ -758,6 +762,19 @@ $('sel-add-area').addEventListener('click', () => {
  ['sel-quote-no', (v) => (sel.quote_no = v)], ['sel-labour', (v) => { sel.data.labour = v; updateTotal(); }]]
   .forEach(([id, set]) => $(id).addEventListener('input', (e) => set(e.target.value)));
 $('sel-notes').addEventListener('input', (e) => (sel.data.notes = e.target.value));
+
+// an admin moves a quotation to another showroom: its letterhead, bank details and quote number
+// follow (Kirti 2026-11-21, a Jayshree Developers quote made for KP came out on Garg's Studio paper)
+let movedRoom = null;
+$('sel-room').addEventListener('change', async (e) => {
+  const id = e.target.value;
+  if (!sel || !SHOWROOMS[id] || id === roomOf(sel)) return;
+  sel.showroom = id;
+  movedRoom = sel;
+  if (sel.quote_no) sel.quote_no = await nextQuoteNo().catch(() => '');
+  renderSelection();
+  changed();
+});
 $('sel-disc-apply').addEventListener('click', () => {
   const v = $('sel-disc-all').value.trim();
   const d = Math.min(100, Math.max(0, Number(v) || 0));
@@ -1242,6 +1259,7 @@ function saveSelection(quiet, auto) {
 async function saveNow(quiet, auto) {
   if (!sel.client.trim()) { if (!auto) alert("Please type the client's name first."); return false; }
   const row = { client: sel.client.trim(), quote_no: sel.quote_no || null, data: sel.data, total: grandTotal(), updated_at: new Date().toISOString() };
+  if (movedRoom === sel) row.showroom = roomOf(sel);
   const res = sel.id ? await db.from('selections').update(row).eq('id', sel.id).select('id').single()
     : await db.from('selections').insert({ ...row, showroom: roomOf(sel) }).select('id').single();
   if (res.error) { if (!auto) alert('Could not save. Check your internet and try again.'); return false; }
